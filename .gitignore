@@ -1,0 +1,12 @@
+plastyfire.egg-info/
+build/
+dist/
+doc/
+extra/
+tests/
+CHANGELOG.rst
+MANIFEST.in
+pyproject.toml
+tox.ini
+plastyfire/__pycache__
+*.pyc
