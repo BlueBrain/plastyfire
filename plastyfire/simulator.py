@@ -1,6 +1,6 @@
 """
 Single cell simulations in BGLibPy
-author: Giuseppe Chindemi, last update 03.2020
+last modified: Giuseppe Chindemi, 03.2020
 """
 
 import os
