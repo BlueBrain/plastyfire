@@ -2,6 +2,7 @@ plastyfire
 ============
 
 optimize and generalize plastic synapses @BBP
+The package heavily relies on BGLibPy - the single cell simulator of the BBP (built on top of PyNEURON) so if you're not in the BBP probably you can't run anything
 
 
 Installation
@@ -24,4 +25,6 @@ Examples
 
 .. code-block::
 
+  cd plastyfire
+  source setupenv.sh  # it has hardcoded virtualenv path which you might want to change
   plastyfire TODO...
