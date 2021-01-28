@@ -7,6 +7,9 @@ authors: Giuseppe Chindemi (12.2020)
 import numpy as np
 import pandas as pd
 from scipy import stats
+from bluepy.v2 import Circuit
+from bluepy.v2.enums import Cell, Synapse
+from neurom import NeuriteType
 
 
 def _get_covariance_matrix(pathway_recipe):
@@ -51,12 +54,12 @@ def _normtodist(dist, value):
 def _get_ltpltd_params(u, gsyn, k_u, k_gsyn):
     """Gets LTP/LTD parameters (randomly based on the release probability `u`)"""
     rho0 = stats.binom.rvs(1, u)
-    if rho0 > 0.5:  # Potentiated synapse
+    if rho0 > 0.5:  # Potentiated synapse (see equations (8-9) and (17-18) in Chindemi et al. 2020, bioRxiv)
         u_d = np.power(u, 1/k_u)
         u_p = u
         gsyn_d = (1/k_gsyn)*gsyn
         gsyn_p = gsyn
-    else:  # Depressed synapse
+    else:  # Depressed synapse (see equations (8-9) and (17-18) in Chindemi et al. 2020, bioRxiv)
         u_d = u
         u_p = np.power(u, k_u)
         gsyn_d = gsyn
@@ -71,7 +74,6 @@ class ParamsGenerator(object):
 
     def __init__(self, circuit_path, extra_recipe_path, k_u=0.2, k_gsyn=2):
         """Constructor that loads circuit and extra recipe parameters from csv"""
-        from bluepy.v2 import Circuit
         self.k_u = k_u
         self.k_gsyn = k_gsyn
         self.circuit = Circuit(circuit_path)
@@ -87,8 +89,6 @@ class ParamsGenerator(object):
         Compared to Spykfunc this function generates different parameters to all synapses mediating the given connection
         in other words: inter-connection variability is *not* assumed to be zero
         """
-        from bluepy.v2.enums import Cell, Synapse
-        from neurom import NeuriteType
 
         # Find pathway recipe
         pre_mtype = self.circuit.cells.get(pregid, Cell.MTYPE)

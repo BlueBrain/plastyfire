@@ -7,6 +7,8 @@ last modified: András Ecker 01.2021
 import os
 import yaml
 from cached_property import cached_property
+from bluepy.v2 import Circuit
+from bluepy.v2.enums import Cell
 from plastyfire.epg import ParamsGenerator
 
 
@@ -41,12 +43,10 @@ class SonataWriter(object):
 
     @cached_property
     def circuit(self):
-        from bluepy.v2 import Circuit
         return Circuit(self.circuit_path)
 
     @cached_property
     def valid_gids(self):
-        from bluepy.v2.enums import Cell
         return self.circuit.cells.ids({"target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
 
     def debug(self):
