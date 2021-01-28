@@ -3,6 +3,8 @@ target: "mc2_Column"
 
 extra_recipe_path: "/gpfs/bbp.cscs.ch/project/proj32/glusynapse_20190926_release/recipe.csv"
 
+base_dir: "/gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/helpersim"
+
 fit_params:
     tau_effca_GB_GluSynapse: 314.3591654475
     gamma_d_GB_GluSynapse: 71.1227582108
