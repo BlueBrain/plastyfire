@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ...
-last modified: András Ecker 01.2021
+last modified: András Ecker 02.2021
 """
 
 import os
@@ -12,6 +12,7 @@ from bluepy.v2 import Circuit
 from bluepy.v2.enums import Cell
 from plastyfire.bcwriter import BCWriter
 from plastyfire.epg import ParamsGenerator
+from plastyfire.simulator import c_pre_finder, c_post_finder
 
 
 class SonataWriter(object):
@@ -66,11 +67,37 @@ class SonataWriter(object):
         bcw = BCWriter(self.circuit_path, duration=2000, target=self.target, target_file=target_fname, base_seed=1909)
         bcw.write(self.base_dir)
 
-    def debug(self):
+    def debug(self, pre_gid=147984, post_gid=147748):
         """Stupid function for debugging purpose"""
         self.write_sim_files()
         pgen = ParamsGenerator(self.circuit_path, self.extra_recipe_path)
-        default_params = pgen.generate_params(pregid=147984, postgid=147748)
+        default_params = pgen.generate_params(pre_gid, post_gid)
+
+        try:
+            cpre = c_pre_finder(self.base_dir, self.fit_params, default_params, pre_gid, post_gid,
+                                fixhp=True, invivo=False)
+            _, cpost = c_post_finder(self.base_dir, self.fit_params, default_params, pre_gid, post_gid,
+                                     stimulus=None, fixhp=True, invivo=False)
+        except RuntimeError:
+            # Something went wrong, set negative threshols (no plasticity)
+            for synapse_id, synapse_params in default_params.items():
+                synapse_params["theta_d"] = -1
+                synapse_params["theta_p"] = -1
+        else:
+            # Compute thresholds (this shouldn't be here, but for now ok)
+            for synapse_id, synapse_params in default_params.items():
+                if synapse_params["loc"] == "basal":
+                    synapse_params["theta_d"] = self.fit_params["a00"] * cpre[synapse_id] +\
+                                                self.fit_params["a01"] * cpost[synapse_id]
+                    synapse_params["theta_p"] = self.fit_params["a10"] * cpre[synapse_id] +\
+                                                self.fit_params["a11"] * cpost[synapse_id]
+                elif synapse_params["loc"] == "apical":
+                    synapse_params["theta_d"] = self.fit_params["a20"] * cpre[synapse_id] +\
+                                                self.fit_params["a21"] * cpost[synapse_id]
+                    synapse_params["theta_p"] = self.fit_params["a30"] * cpre[synapse_id] +\
+                                                self.fit_params["a31"] * cpost[synapse_id]
+                else:
+                    raise ValueError("Unknown location")
 
 
 if __name__ == "__main__":
