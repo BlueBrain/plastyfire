@@ -1,5 +1,7 @@
 """
 Class that represents a synapse in BGLibPy
+original code by Werner van Geir and Anil Tuncel
++ GluSynapse compatibility by Giuseppe Chindemi, Alberto Antonetti and András Ecker
 @remarks Copyright (c) BBP/EPFL 2012; All rights reserved.
          Do not distribute without further notice.
 """

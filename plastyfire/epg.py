@@ -82,27 +82,28 @@ class ParamsGenerator(object):
         self.namelst = ["u", "d", "f", "nrrp", "gsyn", "spinevol"]
         self.paramlst = ["Use0_TM", "Dep_TM", "Fac_TM", "Nrrp_TM", "gmax0_AMPA", "volume_CR"]
 
-    def generate_params(self, pregid, postgid):
+    def generate_params(self, pre_gid, post_gid):
         """
-        Generate parameters (both general U,D,F etc. and plasticity related) for synapses between `pregid` and `postgid`
+        Generate parameters (both general U,D,F etc. and plasticity related) for synapses between `pre_gid` and `post_gid`
         using the same distributions, means and stds as in the original recipe but with correlation between parameters.
         Compared to Spykfunc this function generates different parameters to all synapses mediating the given connection
         in other words: inter-connection variability is *not* assumed to be zero
         """
 
         # Find pathway recipe
-        pre_mtype = self.circuit.cells.get(pregid, Cell.MTYPE)
-        post_mtype = self.circuit.cells.get(postgid, Cell.MTYPE)
+        pre_mtype = self.circuit.cells.get(pre_gid, Cell.MTYPE)
+        post_mtype = self.circuit.cells.get(post_gid, Cell.MTYPE)
         pathway_recipe = self.extra_recipe.loc[pre_mtype, post_mtype]
         # Assemble synapse parameter distribution list
         distlst = [_get_distributions(pathway_recipe["%sDist" % name],
                    pathway_recipe["%s" % name], pathway_recipe["%sSD" % name]) for name in self.namelst]
         # Generate multivariate normal sample with prescribed correlations
         cov = _get_covariance_matrix(pathway_recipe)
+        np.random.seed((pre_gid, post_gid))
         sample_normal = stats.multivariate_normal.rvs(cov=cov)
 
         # Generate parameters for each synapse (TODO: vectorize)
-        s = self.circuit.connectome.pair_synapses(pregid, postgid, Synapse.POST_BRANCH_TYPE)
+        s = self.circuit.connectome.pair_synapses(pre_gid, post_gid, Synapse.POST_BRANCH_TYPE)
         syn_params = dict()
         for syn_id, branch_type in s.items():
             # Convert random normal samples to desired distributions
