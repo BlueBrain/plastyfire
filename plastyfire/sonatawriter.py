@@ -54,7 +54,7 @@ class SonataWriter(object):
 
     @cached_property
     def valid_gids(self):
-        return self.circuit.cells.ids({"target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
+        return self.circuit.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
 
     def write_sim_files(self):
         """Writes simple BlueConfig used by BGLibPy"""
