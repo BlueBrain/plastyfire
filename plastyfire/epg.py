@@ -7,7 +7,6 @@ authors: Giuseppe Chindemi (12.2020)
 import numpy as np
 import pandas as pd
 from scipy import stats
-from bluepy.v2 import Circuit
 from bluepy.v2.enums import Cell, Synapse
 from neurom import NeuriteType
 
@@ -72,11 +71,11 @@ def _get_ltpltd_params(u, gsyn, k_u, k_gsyn):
 class ParamsGenerator(object):
     """Small class for generating synapse parameters with correlations"""
 
-    def __init__(self, circuit_path, extra_recipe_path, k_u=0.2, k_gsyn=2):
+    def __init__(self, circuit, extra_recipe_path, k_u=0.2, k_gsyn=2):
         """Constructor that loads circuit and extra recipe parameters from csv"""
         self.k_u = k_u
         self.k_gsyn = k_gsyn
-        self.circuit = Circuit(circuit_path)
+        self.circuit = circuit
         self.extra_recipe = pd.read_csv(extra_recipe_path, index_col=[0, 1])
         # Set ordered list of parameter names
         self.namelst = ["u", "d", "f", "nrrp", "gsyn", "spinevol"]
