@@ -1,11 +1,13 @@
-circuit_path: "/gpfs/bbp.cscs.ch/project/proj83/circuits/Bio_M/20200805/CircuitConfig"
-target: "hex_O1"
+circuit:
+    path: "/gpfs/bbp.cscs.ch/project/proj83/circuits/Bio_M/20200805/CircuitConfig"
+    user.target: "/gpfs/bbp.cscs.ch/project/proj96/circuits/plastic_v1/user.target"
+    target: "hex_O1"
 
 extra_recipe_path: "/gpfs/bbp.cscs.ch/project/proj96/circuits/plastic_v1/recipe.csv"
 
 out_sonata_fname: "/gpfs/bbp.cscs.ch/project/proj96/circuits/plastic_v1/edges.sonata"
 
-base_dir: "/gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/helpersim"
+sims_dir: "/gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/helpersim"
 
 fit_params:
     tau_effca_GB_GluSynapse: 314.3591654475
