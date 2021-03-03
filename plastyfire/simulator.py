@@ -5,7 +5,6 @@ last modified: Giuseppe Chindemi, 03.2020
 and minor changes for BGLibPy compatibility by András Ecker, 02.2021
 """
 
-import os
 import re
 import warnings
 import logging
@@ -60,13 +59,13 @@ def _set_local_params(synapse, fit_params, extra_params, c_pre=0., c_post=0.):
             synapse.hsynapse.theta_p_GB = fit_params["a30"]*c_pre + fit_params["a31"]*c_post
 
 
-def _c_pre_finder_process(bcpath, fit_params, syn_extra_params, pre_gid, post_gid, fixhp, invivo):
+def _c_pre_finder_process(bc, fit_params, syn_extra_params, pre_gid, post_gid, fixhp):
     """
     Multiprocessing subprocess for `c_pre_finder()`
     Delivers spike from `pre_gid` and measures the Ca++ transient at the synapses on `post_gid`
     """
     logger.debug("Cpre finder process")
-    ssim = bglibpy.SSim(bcpath)
+    ssim = bglibpy.SSim(bc)
     ssim.instantiate_gids([post_gid], synapse_detail=1, add_synapses=True,
                           pre_spike_trains={pre_gid: [1000.]},  # spike train set instead of read from out.dat
                           intersect_pre_gids=[pre_gid])
@@ -78,10 +77,6 @@ def _c_pre_finder_process(bcpath, fit_params, syn_extra_params, pre_gid, post_gi
     # Setup global parameters
     if fit_params is not None:
         _set_global_params(fit_params)
-    # Enable in vivo mode (global)
-    if invivo:
-        bglibpy.neuron.h.cao_CR_GluSynapse = 1.2  # mM
-        # TODO Set global cao
     # Initialize effcai recorder
     recorder = {}
     # Setup synapses
@@ -112,12 +107,11 @@ def _c_pre_finder_process(bcpath, fit_params, syn_extra_params, pre_gid, post_gi
     return {(post_gid, syn_id): recorder[syn_id].max() for syn_id in syn_idx}
 
 
-def c_pre_finder(basedir, fit_params, syn_extra_params, pre_gid, post_gid, fixhp=True, invivo=False):
+def c_pre_finder(bc, fit_params, syn_extra_params, pre_gid, post_gid, fixhp=True):
     """Replays spike from `pre_gid` and measures Ca++ transient in synapses on `post_gid`"""
     logger.info("Calibrating Cpre...")
-    bcpath = os.path.join(basedir, "BlueConfig")
     pool = multiprocessing.Pool(processes=1)
-    c_pre = pool.apply(_c_pre_finder_process, [bcpath, fit_params, syn_extra_params, pre_gid, post_gid, fixhp, invivo])
+    c_pre = pool.apply(_c_pre_finder_process, [bc, fit_params, syn_extra_params, pre_gid, post_gid, fixhp])
     pool.terminate()
     logger.debug("C_pre: %s", str(c_pre))
     return c_pre
@@ -157,7 +151,7 @@ def _runsinglecell_proc(bc, post_gid, stimulus, results, fixhp):
     results.update(stimulus)
 
 
-def runsinglecell(bc, post_gid, stimulus, fixhp=True):
+def runsinglecell(bc, post_gid, stimulus, fixhp):
     """Runs single cell simulation with given stimulus"""
     manager = multiprocessing.Manager()
     logger.debug("Submitting simulation: post_gid={}, f={}, a={}".format(post_gid, stimulus["freq"], stimulus["amp"]))
@@ -169,7 +163,7 @@ def runsinglecell(bc, post_gid, stimulus, fixhp=True):
 
 
 @with_cache
-def spike_threshold_finder(bc_path, post_gid, nspikes, freq, width, offset, min_amp, max_amp, nlevels, fixhp=True):
+def spike_threshold_finder(bc, post_gid, nspikes, freq, width, offset, min_amp, max_amp, nlevels, fixhp=True):
     """
     Finds the min amplitude of stimulus current (within the range [`min_amp`, `max_amp`])
     that makes the `post_gid` fire `nspikes` APs (given `freq`, `width`, `offset`)
@@ -188,7 +182,7 @@ def spike_threshold_finder(bc_path, post_gid, nspikes, freq, width, offset, min_
                 "width": width,
                 "offset": offset,
                 "amp": candidate_amp[m]}
-        simres[m] = runsinglecell(bc_path, post_gid, stim, fixhp)
+        simres[m] = runsinglecell(bc, post_gid, stim, fixhp)
         logger.debug("Number of spikes = %d" % len(simres[m]["t_spikes"]))
         if len(simres[m]["t_spikes"]) < nspikes:
             L = m + 1
@@ -209,15 +203,14 @@ def spike_threshold_finder(bc_path, post_gid, nspikes, freq, width, offset, min_
     return None
 
 
-def _c_post_finder_process(basedir, stimulus, fit_params, syn_extra_params, pre_gid, post_gid, fixhp, invivo):
+def _c_post_finder_process(bc, stimulus, fit_params, syn_extra_params, pre_gid, post_gid, fixhp):
     """
     Multiprocessing subprocess for `c_post_finder()`
     Injects (precalculated) stimulus to the `post_gid` to make it fire 1 AP and measures the Ca++ transient
     (from the backpropagiting AP) at the synapses made by `pre_gid`
     """
     logger.debug("Cpost finder process")
-    bcpath = os.path.join(basedir, "BlueConfig")
-    ssim = bglibpy.SSim(bcpath)
+    ssim = bglibpy.SSim(bc)
     ssim.instantiate_gids([post_gid], synapse_detail=1, add_synapses=True,
                           intersect_pre_gids=[pre_gid])
     cell = ssim.cells[post_gid]
@@ -233,10 +226,6 @@ def _c_post_finder_process(basedir, stimulus, fit_params, syn_extra_params, pre_
     # Setup global parameters
     if fit_params is not None:
         _set_global_params(fit_params)
-    # Enable in vivo mode (global)
-    if invivo:
-        bglibpy.neuron.h.cao_CR_GluSynapse = 1.2  # mM
-        # TODO Set global cao
     # Initialize effcai recorder
     recorder = {}
     # Setup synapses
@@ -277,29 +266,18 @@ def _c_post_finder_process(basedir, stimulus, fit_params, syn_extra_params, pre_
     return results
 
 
-def c_post_finder(basedir, fit_params, syn_extra_params, pre_gid, post_gid, stimulus=None, fixhp=True, invivo=False):
+def c_post_finder(bc, fit_params, syn_extra_params, pre_gid, post_gid, stimulus, fixhp=True):
     """
     Finds c_post - the calcium transient in `post_gid` at synapses made by `pre_gid`.
     To do so it calculates the necessary current to make `post_gid` fire a single AP
     and then measures the Ca++ transient of the backpropagating AP.
     """
-    logger.info("Calibrating Cpost...")
-    if stimulus is None:
-        # Calibrate current pulse amplitude
-        bc_path = os.path.join(basedir, "BlueConfig")
-        for pulse_width in [1.5, 3]:
-            simres = spike_threshold_finder(bc_path, post_gid, 1, 0.1, pulse_width, 1000., 0.05, 5., 100, fixhp)
-            if simres is not None:
-                break
-        else:
-            raise RuntimeError("Could not find a suitable stimulation amplitude for sim %s" % basedir)
-        stimulus = {"nspikes": 1, "freq": 0.1, "width": simres["width"], "offset": 1000., "amp": simres["amp"]}
 
     # Find Cpost
     logger.debug("Stimulating cell with {} nA pulse ({} ms)".format(stimulus["amp"], stimulus["width"]))
     pool = multiprocessing.Pool(processes=1)
-    results = pool.apply(_c_post_finder_process, [basedir, stimulus, fit_params, syn_extra_params,
-                                                  pre_gid, post_gid, fixhp, invivo])
+    results = pool.apply(_c_post_finder_process, [bc, stimulus, fit_params, syn_extra_params,
+                                                  pre_gid, post_gid, fixhp])
     pool.terminate()
 
     # Validate number of spikes
@@ -313,8 +291,8 @@ def c_post_finder(basedir, fit_params, syn_extra_params, pre_gid, post_gid, stim
         logger.debug("Stimulating cell with %f nA pulse", amp)
         stimulus = {"nspikes": 1, "freq": 0.1, "width": stimulus["width"], "offset": 1000., "amp": amp}
         pool = multiprocessing.Pool(processes=1)
-        results = pool.apply(_c_post_finder_process, [basedir, stimulus, fit_params, syn_extra_params,
-                                                      pre_gid, post_gid, fixhp, invivo])
+        results = pool.apply(_c_post_finder_process, [bc, stimulus, fit_params, syn_extra_params,
+                                                      pre_gid, post_gid, fixhp])
         pool.terminate()
         assert len(results["t_spikes"]) == 1
     return stimulus, results["c_post"]
