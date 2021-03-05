@@ -29,6 +29,12 @@ def _update_L5_NMDA_ratio(df):
     df.loc[idx, "gsynSRSF"] = l5_nmda
 
 
+def _fix_NNRP(df):
+    """`ParamsGenerator()` needs mean and std for all distributions... NRRP values are drawn from a Poisson one,
+    where only the mean matters, but we'll add a fake std as well just to make it run"""
+    df["nrrpSD"] = df["nrrp"]
+
+
 def _add_spinevol(df):
     """Adds GluSynapse specific spine volume to the df (based on pathway specific gsyn and NMDA ratio)"""
     df["spinevol"] = spinevol_sf * (1 + df["gsynSRSF"]) * df["gsyn"]
@@ -57,6 +63,7 @@ def update_df(df):
     """Updates preloaded (with xml recipe) DataFrame (see `plastyfire/xmlrecipe.py`)
     to have all `plastyfire/epg.py` and GluSynapse specific parameters"""
     _update_L5_NMDA_ratio(df)
+    _fix_NNRP(df)
     _add_spinevol(df)
     _add_rs(df)
     _add_dists(df)

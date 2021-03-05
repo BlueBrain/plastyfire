@@ -93,6 +93,8 @@ class ParamsGenerator(object):
         pre_mtype = self.circuit.cells.get(pre_gid, Cell.MTYPE)
         post_mtype = self.circuit.cells.get(post_gid, Cell.MTYPE)
         pathway_recipe = self.extra_recipe.loc[pre_mtype, post_mtype]
+        print(pre_mtype, post_mtype)
+        print(pathway_recipe)
         # Assemble synapse parameter distribution list
         distlst = [_get_distributions(pathway_recipe["%sDist" % name],
                    pathway_recipe["%s" % name], pathway_recipe["%sSD" % name]) for name in self.namelst]
@@ -111,7 +113,7 @@ class ParamsGenerator(object):
             # Add LTP / LTD params
             params.update(_get_ltpltd_params(params["Use0_TM"], params["gmax0_AMPA"], self.k_u, self.k_gsyn))
             # Add NMDA conductance
-            params["gmax_NMDA"] = params["gmax0_AMPA"] * pathway_recipe["nmda_ratio"]
+            params["gmax_NMDA"] = params["gmax0_AMPA"] * pathway_recipe["gsynSRSF"]
             # Add branch type
             if branch_type == NeuriteType.basal_dendrite:
                 params["loc"] = "basal"
