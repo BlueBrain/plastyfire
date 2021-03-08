@@ -88,13 +88,10 @@ class ParamsGenerator(object):
         Compared to Spykfunc this function generates different parameters to all synapses mediating the given connection
         in other words: inter-connection variability is *not* assumed to be zero
         """
-
         # Find pathway recipe
         pre_mtype = self.circuit.cells.get(pre_gid, Cell.MTYPE)
         post_mtype = self.circuit.cells.get(post_gid, Cell.MTYPE)
         pathway_recipe = self.extra_recipe.loc[pre_mtype, post_mtype]
-        print(pre_mtype, post_mtype)
-        print(pathway_recipe)
         # Assemble synapse parameter distribution list
         distlst = [_get_distributions(pathway_recipe["%sDist" % name],
                    pathway_recipe["%s" % name], pathway_recipe["%sSD" % name]) for name in self.namelst]
