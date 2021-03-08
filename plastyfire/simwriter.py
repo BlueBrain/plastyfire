@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-
+Writes sbatch scripts for every gid (given a circuit and a target in the config file)
 last modified: András Ecker 03.2021
 """
 
@@ -13,7 +13,7 @@ from bluepy.v2.enums import Cell
 
 
 class SimWriter(object):
-    """"""
+    """Small class to setup single cell simulations"""
 
     def __init__(self, config_path):
         """YAML config file based constructor"""
@@ -42,13 +42,17 @@ class SimWriter(object):
         return self.config["sims_dir"]
 
     def write_sim_files(self):
-        """Writes simple BlueConfig used by BGLibPy (and gid queries)"""
+        """Writes simple BlueConfig used by BGLibPy (and for gid queries)"""
         from plastyfire.bcwriter import BCWriter
+        # write BlueConfig and user.target
         pathlib.Path(self.sims_dir).mkdir(exist_ok=True)
         target_fname = os.path.join(self.sims_dir, "user.target")
         shutil.copyfile(self.user_target, target_fname)
         bcw = BCWriter(self.circuit_path, duration=2000, target=self.target, target_file=target_fname, base_seed=1909)
         bcw.write(self.sims_dir)
+        # create folders for batch scripts and output csv files
+        pathlib.Path(os.path.join(self.sims_dir, "sbatch")).mkdir(exist_ok=True)
+        pathlib.Path(os.path.join(self.sims_dir, "out")).mkdir(exist_ok=True)
 
     def get_valid_gids(self):
         """Gets EXC gids within the specified target (`Circuit()` has to be initialized from a BlueConfig
