@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-
+Runscript for single cell simulations that find the depression and potentiation thresholds used in GluSynapse
 last modified: András Ecker 03.2021
 """
 
@@ -9,12 +9,56 @@ import yaml
 import logging
 from cached_property import cached_property
 import numpy as np
+import pandas as pd
 from bluepy.v2 import Circuit
 from bluepy.v2.enums import Cell
 
 
+# parameters to store (with names corresponding to GluSynapse.mod)
+params = ["Use0_TM", "Dep_TM", "Fac_TM", "Nrrp_TM", "gmax0_AMPA", "volume_CR",  # base 5 params + volume for GluSynapse
+          "rho0_GB", "Use_d_TM", "Use_p_TM", "gmax_d_AMPA", "gmax_p_AMPA",  # generated (see `plastifyre.epg`)
+          "gmax_NMDA", "loc",  # not used in further steps but saved anyways (for ML stuff?)
+          "theta_d", "theta_p"]  # calculated from c_pre and c_post + optimized GluSynapse params
+
+
+def init_df(c, pre_gids, post_gid):
+    """Initializes an empty MultiIndex DataFrame (to be filled with values in `ThresholdFinder.run()`)"""
+    tuples = []
+    for pre_gid in pre_gids:
+        syn_idx = c.connectome.pair_synapses(pre_gid, post_gid)
+        for syn_id in syn_idx:
+            tuples.append((int(pre_gid), syn_id))
+    mi = pd.MultiIndex.from_tuples(tuples, names=["pre_gid", "syn_id"])
+    df_tmp = mi.to_frame()
+    df = df_tmp.drop(columns=["pre_gid", "syn_id"])  # stupid pandas ...
+    for param in params:
+        if param not in ["rho0_GB", "loc", "theta_d", "theta_p"]:
+            fill_value = 0.0
+        elif param == "rho0_GB":
+            fill_value = 0
+        elif param == "loc":
+            fill_value = ""
+        elif param in ["theta_d", "theta_p"]:
+            fill_value = -1.0
+        df[param] = fill_value
+    return df
+
+
+def _synid_to_dfid(df, syn_id):
+    """Gets df MultiIndex from synapse id (first index is pre_gid and it's only stored for better readability)"""
+    return df[df.index.get_level_values(1) == syn_id].index
+
+
+def store_params(df, conn_params):
+    """Adds (generated and calculated) connection parameters to MultiIndex DataFrame"""
+    for syn_id, syn_params in conn_params.items():
+        df_id = _synid_to_dfid(df, syn_id)
+        for param, val in syn_params.items():
+            df.loc[df_id, param] = val
+
+
 class ThresholdFinder(object):
-    """ """
+    """Class (to store info about and) to run single cell simulations in BGLibPy"""
 
     def __init__(self, config_path):
         """YAML config file based constructor"""
@@ -48,14 +92,16 @@ class ThresholdFinder(object):
 
     def run(self, post_gid):
         """Finds c_pre and c_post (see `plastyfire.simulator`) for all afferents of `post_gid`,
-        calculates thresholds used in GluSynapse and ..."""
+        calculates thresholds used in GluSynapse, stores them in a MultiIndex DataFrame, and saves them to csv."""
         from plastyfire.epg import ParamsGenerator
         from plastyfire.simulator import spike_threshold_finder, c_pre_finder, c_post_finder
 
         # get afferent gids (of `post_gid` within the given target)
         c = Circuit(self.bc)
         gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
-        afferent_gids = np.intersect1d(c.connectome.afferent_gids(post_gid), gids)
+        pre_gids = np.intersect1d(c.connectome.afferent_gids(post_gid), gids)
+        # init DataFrame to store results
+        df = init_df(c, pre_gids, post_gid)
         # init Glusynapse parameter generator (with correlations)
         pgen = ParamsGenerator(c, self.extra_recipe_path)
 
@@ -65,38 +111,37 @@ class ThresholdFinder(object):
                 if simres is not None:
                     break
             stimulus = {"nspikes": 1, "freq": 0.1, "width": simres["width"], "offset": 1000., "amp": simres["amp"]}
-        except RuntimeError:  # if not, set negative threshols (no plasticity)
-            for pre_gid in afferent_gids:
-                default_params = pgen.generate_params(pre_gid, post_gid)
-                for synapse_id, synapse_params in default_params.items():
-                    synapse_params["theta_d"] = -1.0
-                    synapse_params["theta_p"] = -1.0
+        except RuntimeError:  # if not, keep negative threshols as initialized in the DataFrame (no plasticity)
+            for pre_gid in pre_gids:
+                conn_params = pgen.generate_params(pre_gid, post_gid)
+                store_params(df, conn_params)
         else:  # if gid can be stimulated to elicit a single spike find c_pre and c_post and calc. thersholds
-            for pre_gid in afferent_gids:
-                default_params = pgen.generate_params(pre_gid, post_gid)
-                cpre = c_pre_finder(self.bc, self.fit_params, default_params, pre_gid, post_gid, True)
-                cpost = c_post_finder(self.bc, self.fit_params, default_params, pre_gid, post_gid, stimulus, True)
-                for synapse_id, synapse_params in default_params.items():
-                    if synapse_params["loc"] == "basal":
-                        synapse_params["theta_d"] = self.fit_params["a00"] * cpre[synapse_id] + \
-                                                    self.fit_params["a01"] * cpost[synapse_id]
-                        synapse_params["theta_p"] = self.fit_params["a10"] * cpre[synapse_id] + \
-                                                    self.fit_params["a11"] * cpost[synapse_id]
-                    elif synapse_params["loc"] == "apical":
-                        synapse_params["theta_d"] = self.fit_params["a20"] * cpre[synapse_id] + \
-                                                    self.fit_params["a21"] * cpost[synapse_id]
-                        synapse_params["theta_p"] = self.fit_params["a30"] * cpre[synapse_id] + \
-                                                    self.fit_params["a31"] * cpost[synapse_id]
+            for pre_gid in pre_gids:
+                conn_params = pgen.generate_params(pre_gid, post_gid)
+                cpre = c_pre_finder(self.bc, self.fit_params, conn_params, pre_gid, post_gid, True)
+                cpost = c_post_finder(self.bc, self.fit_params, conn_params, pre_gid, post_gid, stimulus, True)
+                for syn_id, syn_params in conn_params.items():
+                    if syn_params["loc"] == "basal":
+                        syn_params["theta_d"] = self.fit_params["a00"] * cpre[syn_id] + \
+                                                self.fit_params["a01"] * cpost[syn_id]
+                        syn_params["theta_p"] = self.fit_params["a10"] * cpre[syn_id] + \
+                                                self.fit_params["a11"] * cpost[syn_id]
+                    elif syn_params["loc"] == "apical":
+                        syn_params["theta_d"] = self.fit_params["a20"] * cpre[syn_id] + \
+                                                self.fit_params["a21"] * cpost[syn_id]
+                        syn_params["theta_p"] = self.fit_params["a30"] * cpre[syn_id] + \
+                                                self.fit_params["a31"] * cpost[syn_id]
                     else:
                         raise ValueError("Unknown location")
+                store_params(df, conn_params)
+        # save results to csv
+        df.to_csv(os.path.join(self.sims_dir, "out", "%i.csv" % post_gid))
 
 
 if __name__ == "__main__":
 
     sim = ThresholdFinder(config_path)
     sim.run(post_gid)
-
-    # debug: pre_gid=8706, post_gid=8473
 
 
 
