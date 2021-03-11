@@ -101,9 +101,9 @@ class ParamsGenerator(object):
         sample_normal = stats.multivariate_normal.rvs(cov=cov)
 
         # Generate parameters for each synapse (TODO: vectorize)
-        s = self.circuit.connectome.pair_synapses(pre_gid, post_gid, Synapse.POST_BRANCH_TYPE)
+        syns = self.circuit.connectome.pair_synapses(pre_gid, post_gid, Synapse.POST_BRANCH_TYPE)
         syn_params = dict()
-        for syn_id, branch_type in s.items():
+        for syn_id, branch_type in syns.items():
             # Convert random normal samples to desired distributions
             sample_params = map(_normtodist, distlst, sample_normal)
             params = dict(zip(self.paramlst, sample_params))
