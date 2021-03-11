@@ -15,9 +15,11 @@ Installation
   module load python/3.7.4
   python -m venv dev-plastyfire
   source dev-plastyfire/bin/activate
-  git clone --recursive https://github.com/andrisecker/plastyfire.git
-  cd plastyfire/plastyfire
+  git clone https://github.com/andrisecker/plastyfire.git
+  cd plastyfire
   pip install -i https://bbpteam.epfl.ch/repository/devpi/simple -e .
+  cd plastyfire
+  ./compile_mods.sh
 
 
 EXC-EXC pathway-specific recipe (xml->DataFrame)
