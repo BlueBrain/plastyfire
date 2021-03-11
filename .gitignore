@@ -10,4 +10,6 @@ MANIFEST.in
 pyproject.toml
 tox.ini
 plastyfire/__pycache__
+plastyfire/mod_fix/
+plastyfire/x86_64/
 *.pyc
