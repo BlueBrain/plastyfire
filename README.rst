@@ -23,7 +23,7 @@ Installation
 
 
 EXC-EXC pathway-specific recipe (xml->DataFrame)
---------
+------------------------------------------------
 
 .. code-block::
 
@@ -38,7 +38,27 @@ EXC-EXC pathway-specific recipe (xml->DataFrame)
   python glusynapserecipe.py
 
 
-Run single cell sims to get C_pre and C_post
---------
+Launch single cell sims to get C_pre and C_post
+-----------------------------------------------
 
-  source setupenv.sh  # it has hardcoded virtualenv path which you might want to change
+Writing simulation related files (BlueConfig, user.target, batch scripts)
+.. code-block::
+
+  python simwriter.py
+
+Run single sim for testing purpose
+(For a single gid get's C_pre, and C_post, and the potentiation, and depression thresholds derived from those for all it's afferents)
+.. code-block::
+
+  source setupenv.sh  # it has hardcoded virtualenv and x86_64 path, which you might want to change
+  python thresholdfinder.py {config_path} {post_gid}
+
+To speed things up one can launch these in batches of 1000 on BBP, using the generated launchscripts
+
+
+Merge results and output new connectome in SONATA format
+--------------------------------------------------------
+
+.. code-block::
+
+  python sonatawriter.py  # TODO ...
