@@ -6,6 +6,7 @@ last modified: András Ecker 03.2021
 
 import os
 import yaml
+import argparse
 import logging
 from time import time
 from cached_property import cached_property
@@ -147,11 +148,15 @@ class ThresholdFinder(object):
 
 if __name__ == "__main__":
 
-    config_path = "/gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/configs/hexO1_v7.yaml"
-    post_gid = 8750
-    sim = ThresholdFinder(config_path)
+    # Parse command line
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config_path", type=str, help="path to YAML config file")
+    parser.add_argument("post_gid", type=int, help="post_gid to simulate")
+    args = parser.parse_args()
+
+    sim = ThresholdFinder(args.config_path)
     start_time = time()
-    sim.run(post_gid)
+    sim.run(args.post_gid)
     L.info("Elapsed time: %.2f")
 
 
