@@ -42,12 +42,14 @@ Launch single cell sims to get C_pre and C_post
 -----------------------------------------------
 
 Writing simulation related files (BlueConfig, user.target, batch scripts)
+
 .. code-block::
 
   python simwriter.py
 
 Run single sim for testing purpose
-(For a single gid get's C_pre, and C_post, and the potentiation, and depression thresholds derived from those for all it's afferents)
+(For a single gid gets C_pre, and C_post, and the potentiation, and depression thresholds derived from those for all it's afferents)
+
 .. code-block::
 
   source setupenv.sh  # it has hardcoded virtualenv and x86_64 path, which you might want to change
