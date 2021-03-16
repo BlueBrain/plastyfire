@@ -1,0 +1,15 @@
+#!/bin/sh
+#SBATCH --job-name={name}
+#SBATCH --account=proj96
+#SBATCH --partition=prod_p2
+#SBATCH --cpus-per-task=2
+#SBATCH --nodes=1
+#SBATCH --time={cpu_time}
+#SBATCH --mem=0
+#SBATCH --no-requeue
+#SBATCH --exclusive
+#SBATCH --output=sim_{gid}.log
+
+source /gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/plastyfire/setupenv.sh
+
+python /gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/plastyfire/thresholdfinder.py {config} {gid}
