@@ -6,6 +6,7 @@ module load neurodamus-neocortex/1.2-3.1.0
 
 source /gpfs/bbp.cscs.ch/project/proj96/home/ecker/dev-plastyfire/bin/activate
 
+export NUMEXPR_MAX_THREADS=64
 export BGLIBPY_RNG_MODE=Random123
 unset BGLIBPY_MOD_LIBRARY_PATH
 CUSTOM_ND_ROOT=/gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/plastyfire
