@@ -5,10 +5,10 @@ last modified: András Ecker 03.2021
 """
 
 import os
+import time
 import yaml
 import argparse
 import logging
-from time import time
 from cached_property import cached_property
 import numpy as np
 import pandas as pd
@@ -155,9 +155,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     sim = ThresholdFinder(args.config_path)
-    start_time = time()
+    start_time = time.time()
     sim.run(args.post_gid)
-    L.info("Elapsed time: %.2f")
+    L.info("Elapsed time: %s" % time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
 
 
 
