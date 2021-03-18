@@ -1,6 +1,6 @@
 """
 Class that represents a synapse in BGLibPy
-original code by Werner van Geir and Anil Tuncel
+original code by Werner van Geit and Anil Tuncel
 + GluSynapse compatibility by Giuseppe Chindemi, Alberto Antonetti and András Ecker
 @remarks Copyright (c) BBP/EPFL 2012; All rights reserved.
          Do not distribute without further notice.
@@ -33,7 +33,8 @@ class Synapse(object):
         self.cell = cell
         self.post_gid = cell.gid
         self.syn_id = syn_id
-        self.projection, self.syn_id = self.syn_id
+        # self.projection, self.syn_id = self.syn_id  # only in bglibpy>=4.1
+        self.projection = ''
         self.syn_description = syn_description
         self.connection_parameters = connection_parameters
         self.hsynapse = None

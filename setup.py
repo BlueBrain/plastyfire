@@ -16,34 +16,24 @@ setup(
     author_email="andras.ecker@epfl.ch",
     version=VERSION,
     description="plasticity @BBP",
-    long_description= \
-        """plastyfire
-           ============
-    
-           optimize and generalize plastic synapses @BBP
-        """,
+    long_description="plastyfire: generalize plastic synapses @BBP",
     url="http://bluebrain.epfl.ch",
     license="LGPL-3.0",
-    install_requires=["click>=7.1.2",
-                      "pyyaml>=5.3.1",
+    install_requires=["pyyaml>=5.3.1",
                       "cached-property>=1.5.2",
                       "tqdm>=4.52.0",
-                      "jedi==0.17.2",  # temporary fix for ipython 7.19 (see /ipython/issues/12740)
-                      "ipython>=7.19.0",
-                      "ipyparallel>=6.3.0"
-                      "h5py>=2.7,<3",  # can't use h5py>3; remove once the new version of bluepy is available
+                      "h5py>=2.7,<3",  # can't use h5py>3 with bluepy 0.16.0
                       "numpy>=1.19.4",
                       "scipy>=1.6.0",
                       "pandas>=1.2.1",
                       "libsonata>=0.1.6",
                       ] + [
                       "bluepy[all]==0.16.0",
-                      "bglibpy>=4.3.15"
+                      "bglibpy<4.1"  # 4.1 is the first version that doesn't keep global syn_idx
                       ],
     packages=find_packages(),
     python_requires=">=3.6",
     extras_require={"docs": ["sphinx", "sphinx-bluebrain-theme"]},
-    entry_points={"console_scripts": ["plastyfire=plastyfire.cli:cli"]},
     classifiers=[
         "Development Status :: 2 - Pre-Alpha",
         "Intended Audience :: Education",

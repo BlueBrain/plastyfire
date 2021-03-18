@@ -64,7 +64,7 @@ def _c_pre_finder_process(bc, fit_params, syn_extra_params, pre_gid, post_gid, f
     Multiprocessing subprocess for `c_pre_finder()`
     Delivers spike from `pre_gid` and measures the Ca++ transient at the synapses on `post_gid`
     """
-    logger.debug("Cpre finder process")
+    logger.debug("c_pre finder process")
     ssim = bglibpy.SSim(bc)
     ssim.instantiate_gids([post_gid], synapse_detail=1, add_synapses=True,
                           pre_spike_trains={pre_gid: [1000.]},  # spike train set instead of read from out.dat
@@ -81,12 +81,11 @@ def _c_pre_finder_process(bc, fit_params, syn_extra_params, pre_gid, post_gid, f
     recorder = {}
     # Setup synapses
     syn_idx = []
-    for syn_id_tmp, synapse in cell.synapses.items():
-        syn_id = syn_id_tmp[1]
+    for syn_id, synapse in cell.synapses.items():
         syn_idx.append(syn_id)
         logger.debug("Configuring synapse %d", syn_id)
         # Configure local parameters
-        _set_local_params(synapse, fit_params, syn_extra_params[(post_gid, syn_id)])
+        _set_local_params(synapse, fit_params, syn_extra_params[syn_id])
         # Set recorder
         recorder[syn_id] = bglibpy.neuron.h.Vector()
         recorder[syn_id].record(synapse.hsynapse._ref_effcai_GB)
@@ -104,12 +103,11 @@ def _c_pre_finder_process(bc, fit_params, syn_extra_params, pre_gid, post_gid, f
     ssim.run(3000, cvode=True)
     logger.debug("Simulation completed")
     # Compute calcium peak
-    return {(post_gid, syn_id): recorder[syn_id].max() for syn_id in syn_idx}
+    return {syn_id: recorder[syn_id].max() for syn_id in syn_idx}
 
 
 def c_pre_finder(bc, fit_params, syn_extra_params, pre_gid, post_gid, fixhp=True):
     """Replays spike from `pre_gid` and measures Ca++ transient in synapses on `post_gid`"""
-    logger.info("Calibrating Cpre...")
     pool = multiprocessing.Pool(processes=1)
     c_pre = pool.apply(_c_pre_finder_process, [bc, fit_params, syn_extra_params, pre_gid, post_gid, fixhp])
     pool.terminate()
@@ -209,7 +207,7 @@ def _c_post_finder_process(bc, stimulus, fit_params, syn_extra_params, pre_gid, 
     Injects (precalculated) stimulus to the `post_gid` to make it fire 1 AP and measures the Ca++ transient
     (from the backpropagiting AP) at the synapses made by `pre_gid`
     """
-    logger.debug("Cpost finder process")
+    logger.debug("c_post finder process")
     ssim = bglibpy.SSim(bc)
     ssim.instantiate_gids([post_gid], synapse_detail=1, add_synapses=True,
                           intersect_pre_gids=[pre_gid])
@@ -230,12 +228,11 @@ def _c_post_finder_process(bc, stimulus, fit_params, syn_extra_params, pre_gid, 
     recorder = {}
     # Setup synapses
     syn_idx = []
-    for syn_id_tmp, synapse in cell.synapses.items():
-        syn_id = syn_id_tmp[1]
+    for syn_id, synapse in cell.synapses.items():
         syn_idx.append(syn_id)
         logger.debug("Configuring synapse %d", syn_id)
         # Configure local parameters
-        _set_local_params(synapse, fit_params, syn_extra_params[(post_gid, syn_id)])
+        _set_local_params(synapse, fit_params, syn_extra_params[syn_id])
         # Set recorder
         recorder[syn_id] = bglibpy.neuron.h.Vector()
         recorder[syn_id].record(synapse.hsynapse._ref_effcai_GB)
@@ -255,10 +252,10 @@ def _c_post_finder_process(bc, stimulus, fit_params, syn_extra_params, pre_gid, 
     spikes = np.array([tdense[i+1] for i in range(int(200/dt_int), len(vdense) - 1)
                        if vdense[i] < -30 and vdense[i+1] >= -30])
     # Compute c_post
-    c_post = {(post_gid, syn_id): recorder[syn_id].max() for syn_id in syn_idx}
+    c_post = {syn_id: recorder[syn_id].max() for syn_id in syn_idx}
     # Store results
     results = {"c_post": c_post,
-               "c_trace": {(post_gid, syn_id): np.array(recorder[syn_id]) for syn_id in syn_idx},
+               "c_trace": {syn_id: np.array(recorder[syn_id]) for syn_id in syn_idx},
                "t": t,
                "v": v,
                "t_spikes": spikes,
@@ -273,7 +270,7 @@ def c_post_finder(bc, fit_params, syn_extra_params, pre_gid, post_gid, stimulus,
     and then measures the Ca++ transient of the backpropagating AP.
     """
 
-    # Find Cpost
+    # Find c_post
     logger.debug("Stimulating cell with {} nA pulse ({} ms)".format(stimulus["amp"], stimulus["width"]))
     pool = multiprocessing.Pool(processes=1)
     results = pool.apply(_c_post_finder_process, [bc, stimulus, fit_params, syn_extra_params,
@@ -284,9 +281,9 @@ def c_post_finder(bc, fit_params, syn_extra_params, pre_gid, post_gid, stimulus,
     logger.debug("Spike timing: {}".format(results["t_spikes"]))
     if len(results["t_spikes"]) < 1:
         # Special case, small integration differences with threshold detection sim
-        warnings.warn("Cell not spiking as expected during Cpost,"
+        warnings.warn("Cell not spiking as expected during c_post,"
                       "attempting to bump stimulus amplitude before failing...")
-        # Find Cpost
+        # Find c_post
         amp = stimulus["amp"] + 0.05
         logger.debug("Stimulating cell with %f nA pulse", amp)
         stimulus = {"nspikes": 1, "freq": 0.1, "width": stimulus["width"], "offset": 1000., "amp": amp}
@@ -295,5 +292,5 @@ def c_post_finder(bc, fit_params, syn_extra_params, pre_gid, post_gid, stimulus,
                                                       pre_gid, post_gid, fixhp])
         pool.terminate()
         assert len(results["t_spikes"]) == 1
-    return stimulus, results["c_post"]
+    return results["c_post"]
 
