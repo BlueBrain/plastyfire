@@ -95,15 +95,15 @@ class ParamsGenerator(object):
         # Assemble synapse parameter distribution list
         distlst = [_get_distributions(pathway_recipe["%sDist" % name],
                    pathway_recipe["%s" % name], pathway_recipe["%sSD" % name]) for name in self.namelst]
-        # Generate multivariate normal sample with prescribed correlations
-        cov = _get_covariance_matrix(pathway_recipe)
-        np.random.seed((pre_gid, post_gid))
-        sample_normal = stats.multivariate_normal.rvs(cov=cov)
 
         # Generate parameters for each synapse (TODO: vectorize)
         syns = self.circuit.connectome.pair_synapses(pre_gid, post_gid, Synapse.POST_BRANCH_TYPE)
         syn_params = dict()
         for syn_id, branch_type in syns.items():
+            # Generate multivariate normal sample with prescribed correlations
+            cov = _get_covariance_matrix(pathway_recipe)
+            np.random.seed(syn_id)
+            sample_normal = stats.multivariate_normal.rvs(cov=cov)
             # Convert random normal samples to desired distributions
             sample_params = map(_normtodist, distlst, sample_normal)
             params = dict(zip(self.paramlst, sample_params))
