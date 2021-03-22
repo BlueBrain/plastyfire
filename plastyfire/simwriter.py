@@ -6,6 +6,7 @@ last modified: András Ecker 03.2021
 
 import os
 import yaml
+import time
 import pathlib
 import shutil
 from tqdm import tqdm
@@ -43,16 +44,10 @@ class SimWriter(object):
     def sims_dir(self):
         return self.config["sims_dir"]
 
-    def get_valid_gids(self, bc):
-        """Gets EXC gids within the specified target (`Circuit()` has to be initialized from a BlueConfig
-        to get the extra target from user.target)"""
-        c = Circuit(bc)
-        return c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
-
-    def write_batch_sript(self, f_name, templ, gid):
+    def write_batch_sript(self, f_name, templ, gid, cpu_time, qos):
         """Writes single cell batch script"""
         with open(f_name, "w") as f:
-            f.write(templ.format(name="plast_%i" % gid, cpu_time="1:00:00",
+            f.write(templ.format(name="plast_%i" % gid, cpu_time=cpu_time, qos=qos,
                                  config=self.config_path, gid=gid))
 
     def write_sim_files(self):
@@ -71,14 +66,22 @@ class SimWriter(object):
         pathlib.Path(os.path.join(self.sims_dir, "out")).mkdir(exist_ok=True)
 
         # get all EXC gids and write sbatch scripts for all of them
+        c = Circuit(bc)
+        gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
         with open("templates/simulation.batch.tmpl", "r") as f:
             templ = f.read()
-        gids = self.get_valid_gids(bc)
         f_names = []
         for gid in tqdm(gids, desc="Writing batch scripts for every EXC gid", miniters=len(gids)/100):
             f_name = os.path.join(sbatch_dir, "sim_%i.batch" % gid)
             f_names.append(f_name)
-            self.write_batch_sript(f_name, templ, gid)
+            n_afferents = len(np.intersect1d(c.connectome.afferent_gids(gid), gids))
+            # CPU time heuristics: 5 min setup and stim. calc., 1.5 min sim per connection + 10 min just to make sure
+            cpu_time_sec = (5 + n_afferents * 1.5 + 10) * 60
+            cpu_time = time.strftime("%H:%M:%S", time.gmtime(cpu_time_sec))
+            # in SSCX hex_O1 there aren't EXC cells with >2000 afferents, so it won't go over 1 day,
+            # but keeping this here for the future...
+            qos = "#SBATCH --qos=longjob" if int(cpu_time.split(':')[0]) > 24 else ""
+            self.write_batch_sript(f_name, templ, gid, cpu_time, qos)
         # write master launch scripts in batches of 1k
         idx = np.arange(0, len(f_names), 1000)
         idx = np.append(idx, len(f_names))
