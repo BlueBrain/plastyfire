@@ -11,6 +11,9 @@ from bluepy.v2.enums import Cell, Synapse
 from neurom import NeuriteType
 
 
+MAX_SEED = 2**32 - 1
+
+
 def _get_covariance_matrix(pathway_recipe):
     """
     Covariance matrix of synaptic parameters (see eq. (28) in Chindemi et al. 2020, bioRxiv)
@@ -102,7 +105,7 @@ class ParamsGenerator(object):
         for syn_id, branch_type in syns.items():
             # Generate multivariate normal sample with prescribed correlations
             cov = _get_covariance_matrix(pathway_recipe)
-            np.random.seed(syn_id)
+            np.random.seed(np.mod(syn_id, MAX_SEED))
             sample_normal = stats.multivariate_normal.rvs(cov=cov)
             # Convert random normal samples to desired distributions
             sample_params = map(_normtodist, distlst, sample_normal)
