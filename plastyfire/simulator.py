@@ -67,7 +67,7 @@ def _c_pre_finder_process(bc, fit_params, syn_extra_params, pre_gid, post_gid, f
     logger.debug("c_pre finder process")
     ssim = bglibpy.SSim(bc)
     ssim.instantiate_gids([post_gid], synapse_detail=1, add_synapses=True,
-                          pre_spike_trains={pre_gid: [1000.]},  # spike train set instead of read from out.dat
+                          pre_spike_trains={pre_gid: [1000.]},
                           intersect_pre_gids=[pre_gid])
     cell = ssim.cells[post_gid]
     # Hyperpolarization workaround
@@ -100,7 +100,7 @@ def _c_pre_finder_process(bc, fit_params, syn_extra_params, pre_gid, post_gid, f
         synapse.hsynapse.theta_d_GB = -1
         synapse.hsynapse.theta_p_GB = -1
     # Run
-    ssim.run(3000, cvode=True)
+    ssim.run(2500, cvode=True)
     logger.debug("Simulation completed")
     # Compute calcium peak
     return {syn_id: recorder[syn_id].max() for syn_id in syn_idx}
