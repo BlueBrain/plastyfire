@@ -5,6 +5,7 @@ last modified: András Ecker 03.2021
 """
 
 import os
+import gc
 import time
 import yaml
 import argparse
@@ -111,12 +112,15 @@ class ThresholdFinder(object):
         pgen = ParamsGenerator(c, self.extra_recipe_path)
 
         try:  # first test if gid can be stimulated to elicit a single spike
+            L.info("Finding stimulus for gid %i" % post_gid)
+            t1 = time.time()
             for pulse_width in [1.5, 3]:
-                L.info("Finding stimulus for gid %i" % post_gid)
                 simres = spike_threshold_finder(self.bc, post_gid, 1, 0.1, pulse_width, 1000., 0.05, 5., 100, True)
                 if simres is not None:
                     break
             stimulus = {"nspikes": 1, "freq": 0.1, "width": simres["width"], "offset": 1000., "amp": simres["amp"]}
+            L.info("%.2f nA (%.1f s long) stimulus found in %s" % (stimulus["amp"], stimulus["width"],
+                   time.strftime("%M:%S", time.gmtime(time.time() - t1))))
         except RuntimeError:  # if not, keep negative threshols as initialized in the DataFrame (no plasticity)
             L.info("Stimulus couldn't be calibrated, skipping simulations, setting negative threshold.")
             for pre_gid in pre_gids:
@@ -142,7 +146,9 @@ class ThresholdFinder(object):
                     else:
                         raise ValueError("Unknown location")
                 store_params(df, conn_params)
+                gc.collect()
         # save results to csv
+        L.info("Saving results to out/%i.csv" % post_gid)
         df.to_csv(os.path.join(self.sims_dir, "out", "%i.csv" % post_gid))
 
 
@@ -158,6 +164,7 @@ if __name__ == "__main__":
     start_time = time.time()
     sim.run(args.post_gid)
     L.info("Elapsed time: %s" % time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+
 
 
 
