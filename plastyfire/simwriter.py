@@ -6,13 +6,26 @@ last modified: András Ecker 03.2021
 
 import os
 import yaml
-import time
 import pathlib
 import shutil
 from tqdm import tqdm
 import numpy as np
 from bluepy.v2 import Circuit
 from bluepy.v2.enums import Cell
+
+
+CPU_TIME = 1.5  # heuristics: c_pre and c_post for a single connection takes ca. 1.3 minutes to simulate/calculate
+
+
+def get_cpu_time(n_afferents):
+    """CPU time heuristics: 5 min setup and stimulus calculation + 10 mins. extra just to make sure +
+    gid specific simulation time, based on the number of its afferent gids"""
+    cpu_time_sec = (15 + n_afferents * CPU_TIME) * 60
+    h, m = np.divmod(cpu_time_sec, 3600)
+    m, s = np.divmod(m, 60)
+    cpu_time_str = "%.2i:%.2i:%.2i" % (h, m, s)
+    qos = "#SBATCH --qos=longjob" if h >= 24 else ""
+    return cpu_time_str, qos
 
 
 class SimWriter(object):
@@ -75,12 +88,7 @@ class SimWriter(object):
             f_name = os.path.join(sbatch_dir, "sim_%i.batch" % gid)
             f_names.append(f_name)
             n_afferents = len(np.intersect1d(c.connectome.afferent_gids(gid), gids))
-            # CPU time heuristics: 5 min setup and stim. calc., 1.5 min sim per connection + 10 min just to make sure
-            cpu_time_sec = (5 + n_afferents * 1.5 + 10) * 60
-            cpu_time = time.strftime("%H:%M:%S", time.gmtime(cpu_time_sec))
-            # in SSCX hex_O1 there aren't EXC cells with >2000 afferents, so it won't go over 1 day,
-            # but keeping this here for the future...
-            qos = "#SBATCH --qos=longjob" if int(cpu_time.split(':')[0]) > 24 else ""
+            cpu_time, qos = get_cpu_time(n_afferents)
             self.write_batch_sript(f_name, templ, gid, cpu_time, qos)
         # write master launch scripts in batches of 1k
         idx = np.arange(0, len(f_names), 1000)
@@ -96,5 +104,3 @@ if __name__ == "__main__":
     config = "/gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/configs/hexO1_v7.yaml"
     writer = SimWriter(config)
     writer.write_sim_files()
-
-
