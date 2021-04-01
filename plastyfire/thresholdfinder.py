@@ -111,22 +111,18 @@ class ThresholdFinder(object):
         # init Glusynapse parameter generator (with correlations)
         pgen = ParamsGenerator(c, self.extra_recipe_path)
 
-        try:  # first test if gid can be stimulated to elicit a single spike
-            L.info("Finding stimulus for gid %i" % post_gid)
-            t1 = time.time()
-            for pulse_width in [1.5, 3]:
-                simres = spike_threshold_finder(self.bc, post_gid, 1, 0.1, pulse_width, 1000., 0.05, 5., 100, True)
-                if simres is not None:
-                    break
+        # first test if gid can be stimulated to elicit a single spike
+        L.info("Finding stimulus for gid %i (%s)" % (post_gid, c.cells.get(post_gid, Cell.MTYPE)))
+        t1 = time.time()
+        for pulse_width in [1.5, 3]:
+            simres = spike_threshold_finder(self.bc, post_gid, 1, 0.1, pulse_width, 1000., 0.05, 5., 100, True)
+            if simres is not None:
+                break
+        # if gid can be stimulated to elicit a single spike find c_pre and c_post and calc. thersholds
+        if simres is not None:
             stimulus = {"nspikes": 1, "freq": 0.1, "width": simres["width"], "offset": 1000., "amp": simres["amp"]}
             L.info("%.2f nA (%.1f s long) stimulus found in %s" % (stimulus["amp"], stimulus["width"],
                    time.strftime("%M:%S", time.gmtime(time.time() - t1))))
-        except RuntimeError:  # if not, keep negative threshols as initialized in the DataFrame (no plasticity)
-            L.info("Stimulus couldn't be calibrated, skipping simulations, setting negative threshold.")
-            for pre_gid in pre_gids:
-                conn_params = pgen.generate_params(pre_gid, post_gid)
-                store_params(df, conn_params)
-        else:  # if gid can be stimulated to elicit a single spike find c_pre and c_post and calc. thersholds
             for i, pre_gid in enumerate(pre_gids):
                 L.info("Finding c_pre and c_post for %i -> %i (%i/%i)" % (pre_gid, post_gid, i+1, len(pre_gids)))
                 conn_params = pgen.generate_params(pre_gid, post_gid)
@@ -147,6 +143,11 @@ class ThresholdFinder(object):
                         raise ValueError("Unknown location")
                 store_params(df, conn_params)
                 gc.collect()
+        else:  # if not, keep negative threshols as initialized in the DataFrame (no plasticity)
+            L.info("Stimulus couldn't be calibrated, skipping simulations, setting negative thresholds.")
+            for pre_gid in pre_gids:
+                conn_params = pgen.generate_params(pre_gid, post_gid)
+                store_params(df, conn_params)
         # save results to csv
         L.info("Saving results to out/%i.csv" % post_gid)
         df.to_csv(os.path.join(self.sims_dir, "out", "%i.csv" % post_gid))
@@ -164,8 +165,4 @@ if __name__ == "__main__":
     start_time = time.time()
     sim.run(args.post_gid)
     L.info("Elapsed time: %s" % time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
-
-
-
-
 
