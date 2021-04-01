@@ -1,5 +1,5 @@
 circuit:
-    path: "/gpfs/bbp.cscs.ch/project/proj83/circuits/Bio_M/20200805/CircuitConfig_NRRP_Update_2021_03_04_TC"
+    path: "/gpfs/bbp.cscs.ch/project/proj83/circuits/Bio_M/20200805/CircuitConfig"
     user.target: "/gpfs/bbp.cscs.ch/project/proj96/circuits/plastic_v1/user.target"
     target: "hex_O1"
 
