@@ -2,7 +2,7 @@
 Single cell simulations in BGLibPy
 last modified: Giuseppe Chindemi, 03.2020
 + deleting parts that aren't used for generalization
-and minor changes for BGLibPy compatibility by András Ecker, 02.2021
+and minor changes for BGLibPy compatibility by András Ecker, 03.2021
 """
 
 import re
@@ -16,13 +16,10 @@ from functools import lru_cache
 
 bglibpy.neuron.h.cvode.atolscale("v", .1)
 DEBUG = False
-
 # Set cache for spiking thresholds
 with_cache = lru_cache(128)
-
 # Configure logger
 logger = logging.getLogger(__name__)
-
 # Patch bglibpy
 bglibpy.Synapse = Synapse
 
