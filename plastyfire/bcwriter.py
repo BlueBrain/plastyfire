@@ -19,25 +19,27 @@ class BCWriter(object):
         self.target_file = "" if target_file is None else target_file
         self.base_seed = base_seed
         # Get circuit configuration
-        self.morphology_path = c.config["morphologies"]
-        self.metype_path = c.config["emodels"]
-        self.mecombo_file = c.config["mecombo_info"]
         self.circuit_path = c.config["segment_index"]  # this is a bit hacky...
         self.nrn_path = c.config["connectome"]
+        self.morphology_path = c.config["morphologies"]
+        self.morphology_type = c.config["morphology_type"]
+        self.metype_path = c.config["emodels"]
+        self.mecombo_file = c.config["mecombo_info"]
 
     def _generate_run_default(self, output_path):
         """Fills in template with basic circuit info"""
         with open("templates/BlueConfig.tmpl", "r") as f:
             templ = f.read()
-        return templ.format(morphology_path=self.morphology_path,
+        return templ.format(circuit_path=self.circuit_path,
+                            nrn_path=self.nrn_path,
+                            morphology_path=self.morphology_path,
+                            morphology_type=self.morphology_type,
                             metype_path=self.metype_path,
                             mecombo_file=self.mecombo_file,
-                            circuit_path=self.circuit_path,
-                            nrn_path=self.nrn_path,
-                            base_seed=self.base_seed,
                             output_path=output_path,
                             target_file=self.target_file,
                             target=self.target,
+                            base_seed=self.base_seed,
                             duration=self.duration)
 
     def write(self, output_path):
