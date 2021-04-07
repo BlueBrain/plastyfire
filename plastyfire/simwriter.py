@@ -18,7 +18,7 @@ CPU_TIME = 1.5  # heuristics: c_pre and c_post for a single connection takes ca.
 
 
 def get_cpu_time(n_afferents):
-    """CPU time heuristics: 5 min setup and stimulus calculation + 10 mins. extra just to make sure +
+    """CPU time heuristics: 5 min setup, impedance and stimulus calculation + 10 mins. extra just to make sure +
     gid specific simulation time, based on the number of its afferent gids"""
     cpu_time_sec = (15 + n_afferents * CPU_TIME) * 60
     h, m = np.divmod(cpu_time_sec, 3600)
@@ -59,7 +59,7 @@ class SimWriter(object):
 
     def write_batch_sript(self, f_name, templ, gid, cpu_time, qos):
         """Writes single cell batch script"""
-        with open(f_name, "w") as f:
+        with open(f_name, "w", encoding="latin1") as f:
             f.write(templ.format(name="plast_%i" % gid, cpu_time=cpu_time, qos=qos,
                                  config=self.config_path, gid=gid))
 
@@ -90,13 +90,30 @@ class SimWriter(object):
             n_afferents = len(np.intersect1d(c.connectome.afferent_gids(gid), gids))
             cpu_time, qos = get_cpu_time(n_afferents)
             self.write_batch_sript(f_name, templ, gid, cpu_time, qos)
-        # write master launch scripts in batches of 1k
-        idx = np.arange(0, len(f_names), 1000)
+        # write master launch scripts in batches of 5k
+        idx = np.arange(0, len(f_names), 5000)
         idx = np.append(idx, len(f_names))
         for i, (start, end) in enumerate(zip(idx[:-1], idx[1:])):
             with open(os.path.join(sbatch_dir, "launch_batch%i.sh" % i), "w") as f:
                 for f_name in f_names[start:end]:
                     f.write("sbatch %s\n" % f_name)
+
+    def relaunch_failed_jobs(self, error):
+        """Checks output files and if they aren't presents checks logs for specific `error`
+        and creates master launch script to relaunch all failed jobs"""
+        c = Circuit(os.path.join(self.sims_dir, "BlueConfig"))
+        gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
+        f_names = []
+        for gid in tqdm(gids, desc="Checking log files", miniters=len(gids)/100):
+            if not os.path.isfile(os.path.join(self.sims_dir, "out", "%i.csv" % gid)):
+                f_name = os.path.join(self.sims_dir, "sbatch", "sim_%i.log" % gid)
+                if os.path.isfile(f_name):
+                    with open(f_name, "r") as f:
+                        if error in f.readlines()[-1]:
+                            f_names.append(os.path.join(self.sims_dir, "sbatch", "sim_%i.batch" % gid))
+        with open(os.path.join(self.sims_dir, "sbatch", "relaunch_failed.sh"), "w") as f:
+            for f_name in f_names:
+                f.write("sbatch %s\n" % f_name)
 
 
 if __name__ == "__main__":
@@ -104,3 +121,4 @@ if __name__ == "__main__":
     config = "/gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/configs/hexO1_v7.yaml"
     writer = SimWriter(config)
     writer.write_sim_files()
+    #writer.relaunch_failed_jobs("SyntaxError:")

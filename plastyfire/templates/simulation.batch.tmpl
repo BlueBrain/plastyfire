@@ -3,11 +3,10 @@
 #SBATCH --account=proj96
 #SBATCH --partition=prod_p2
 #SBATCH --cpus-per-task=2
-#SBATCH --nodes=1
+#SBATCH --ntasks=2
 #SBATCH --time={cpu_time}
-#SBATCH --mem=0
+#SBATCH --mem=15g
 #SBATCH --no-requeue
-#SBATCH --exclusive
 #SBATCH --output=sim_{gid}.log
 {qos}
 
