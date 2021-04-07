@@ -16,129 +16,41 @@ from functools import lru_cache
 
 bglibpy.neuron.h.cvode.atolscale("v", .1)
 DEBUG = False
-# Set cache for spiking thresholds
+# set cache for spiking thresholds
 with_cache = lru_cache(128)
-# Configure logger
+# configure logger
 logger = logging.getLogger(__name__)
-# Patch bglibpy
+# patch bglibpy
 bglibpy.Synapse = Synapse
-
-
-def _set_global_params(allparams):
-    """Sets global parameters of the simulation"""
-    logger.debug("Setting global parameters")
-    for param_name, param_val in allparams.items():
-        if re.match(".*_GluSynapse$", param_name):
-            setattr(bglibpy.neuron.h, param_name, param_val)
-            logger.debug("\t%s = %f", param_name, getattr(bglibpy.neuron.h, param_name))
-
-
-def _set_local_params(synapse, fit_params, extra_params, c_pre=0., c_post=0.):
-    """Sets synaptic parameters in BGLibPy"""
-    # Update basic synapse parameters
-    for param in extra_params:
-        if param == "loc":
-            continue
-        setattr(synapse.hsynapse, param, extra_params[param])
-    # Update thresholds
-    if fit_params is not None:
-        if all(key in fit_params for key in ["a00", "a01"]) and extra_params["loc"] == "basal":
-            # Set basal depression threshold
-            synapse.hsynapse.theta_d_GB = fit_params["a00"]*c_pre + fit_params["a01"]*c_post
-        if all(key in fit_params for key in ["a10", "a11"]) and extra_params["loc"] == "basal":
-            # Set basal potentiation threshold
-            synapse.hsynapse.theta_p_GB = fit_params["a10"]*c_pre + fit_params["a11"]*c_post
-        if all(key in fit_params for key in ["a20", "a21"]) and extra_params["loc"] == "apical":
-            # Set apical depression threshold
-            synapse.hsynapse.theta_d_GB = fit_params["a20"]*c_pre + fit_params["a21"]*c_post
-        if all(key in fit_params for key in ["a30", "a31"]) and extra_params["loc"] == "apical":
-            # Set apical potentiation threshold
-            synapse.hsynapse.theta_p_GB = fit_params["a30"]*c_pre + fit_params["a31"]*c_post
-
-
-def _c_pre_finder_process(bc, fit_params, syn_extra_params, pre_gid, post_gid, fixhp):
-    """
-    Multiprocessing subprocess for `c_pre_finder()`
-    Delivers spike from `pre_gid` and measures the Ca++ transient at the synapses on `post_gid`
-    """
-    logger.debug("c_pre finder process")
-    ssim = bglibpy.SSim(bc)
-    ssim.instantiate_gids([post_gid], synapse_detail=1, add_synapses=True,
-                          pre_spike_trains={pre_gid: [1000.]},
-                          intersect_pre_gids=[pre_gid])
-    cell = ssim.cells[post_gid]
-    # Hyperpolarization workaround
-    if fixhp:
-        for sec in cell.somatic + cell.axonal:
-            sec.uninsert("SK_E2")
-    # Setup global parameters
-    if fit_params is not None:
-        _set_global_params(fit_params)
-    # Initialize effcai recorder
-    recorder = {}
-    # Setup synapses
-    syn_idx = []
-    for syn_id, synapse in cell.synapses.items():
-        syn_idx.append(syn_id)
-        logger.debug("Configuring synapse %d", syn_id)
-        # Configure local parameters
-        _set_local_params(synapse, fit_params, syn_extra_params[syn_id])
-        # Set recorder
-        recorder[syn_id] = bglibpy.neuron.h.Vector()
-        recorder[syn_id].record(synapse.hsynapse._ref_effcai_GB)
-        # Override Rho
-        synapse.hsynapse.rho0_GB = 1
-        # Override Use
-        synapse.hsynapse.Use0_TM = 1
-        synapse.hsynapse.Use_p_TM = 1
-        # Override gmax_AMPA
-        synapse.hsynapse.gmax0_AMPA = synapse.hsynapse.gmax_p_AMPA
-        # Disable LTP / LTD
-        synapse.hsynapse.theta_d_GB = -1
-        synapse.hsynapse.theta_p_GB = -1
-    # Run
-    ssim.run(2500, cvode=True)
-    logger.debug("Simulation completed")
-    # Compute calcium peak
-    return {syn_id: recorder[syn_id].max() for syn_id in syn_idx}
-
-
-def c_pre_finder(bc, fit_params, syn_extra_params, pre_gid, post_gid, fixhp=True):
-    """Replays spike from `pre_gid` and measures Ca++ transient in synapses on `post_gid`"""
-    pool = multiprocessing.Pool(processes=1)
-    c_pre = pool.apply(_c_pre_finder_process, [bc, fit_params, syn_extra_params, pre_gid, post_gid, fixhp])
-    pool.terminate()
-    logger.debug("C_pre: %s", str(c_pre))
-    return c_pre
 
 
 def _runsinglecell_proc(bc, post_gid, stimulus, results, fixhp):
     """Multiprocessing subprocess for `runsinglecell()`"""
-    # Create simulation
+    # create simulation
     ssim = bglibpy.SSim(bc)
     ssim.instantiate_gids([post_gid])
     cell = ssim.cells[post_gid]
-    # Hyperpolarization workaround
+    # hyperpolarization workaround
     if fixhp:
         for sec in cell.somatic + cell.axonal:
             sec.uninsert("SK_E2")
-    # Add stimuli
+    # add stimuli
     tstim = bglibpy.neuron.h.TStim(0.5, sec=cell.soma)
     stim_duration = (stimulus["nspikes"] - 1) * 1000./stimulus["freq"] + stimulus["width"]
     tstim.train(stimulus["offset"], stim_duration, stimulus["amp"], stimulus["freq"], stimulus["width"])
     cell.persistent.append(tstim)
-    # Runsim
+    # runsim
     ssim.run(stimulus["offset"] + stim_duration + 200., cvode=True)
-    # Get soma voltage and simulation time vector
+    # get soma voltage and simulation time vector
     t = np.array(ssim.get_time())
     v = np.array(ssim.get_voltage_traces()[post_gid])
-    # Get spike timing (skip 200 ms)
+    # get spike timing (skip 200 ms)
     dt_int = 0.025
     tdense = np.linspace(min(t), max(t), int((max(t)-min(t))/dt_int))
     vdense = np.interp(tdense, t, v)
     spikes = np.array([tdense[i+1] for i in range(int(200/dt_int), len(vdense) - 1)
                        if vdense[i] < -30 and vdense[i+1] >= -30])
-    # Store results
+    # store results
     results["t"] = t
     results["v"] = v
     results["t_spikes"] = spikes
@@ -164,9 +76,9 @@ def spike_threshold_finder(bc, post_gid, nspikes, freq, width, offset, min_amp, 
     that makes the `post_gid` fire `nspikes` APs (given `freq`, `width`, `offset`)
     using a binary search (parametrized by `nlevels`).
     """
-    # Initialize search grid
+    # initialize search grid
     candidate_amp = np.linspace(min_amp, max_amp, nlevels)
-    # Find suitable amplitude (binary search, leftmost element)
+    # find suitable amplitude (binary search, leftmost element)
     L = 0
     R = nlevels
     simres = {}
@@ -198,6 +110,127 @@ def spike_threshold_finder(bc, post_gid, nspikes, freq, width, offset, min_amp, 
     return None
 
 
+def _inp_imp_finder_process(bc, post_gid, synapse_locations, fixhp):
+    """
+    Multiprocessing subprocess for `inp_imp_finder()`
+    Instantiates cell and uses NEURON's built in Impedance class to get input impedance at all synapse locations
+    """
+    logger.debug("input impedance finder process")
+    ssim = bglibpy.SSim(bc)
+    ssim.instantiate_gids([post_gid])
+    cell = ssim.cells[post_gid]
+    # hyperpolarization workaround (just for consistency)
+    if fixhp:
+        for sec in cell.somatic + cell.axonal:
+            sec.uninsert("SK_E2")
+    # calculate input impedance at evey synapse location
+    inp_imps = {}
+    for syn_id, row in synapse_locations.iterrows():
+        pos = row["pos"]
+        sec = cell.get_hsection(row["sec_id"])
+        imp = bglibpy.neuron.h.Impedance()
+        imp.loc(pos, sec=sec)
+        imp.compute(0, 1)
+        inp_imps[syn_id] = imp.input(pos, sec=sec)
+    return inp_imps
+
+
+def inp_imp_finder(bc, post_gid, synapse_locations, fixhp=True):
+    """Calculates input impedance at all synapse locations"""
+    pool = multiprocessing.Pool(processes=1)
+    inp_imps = pool.apply(_inp_imp_finder_process, [bc, post_gid, synapse_locations, fixhp])
+    pool.terminate()
+    return inp_imps
+
+
+def _set_global_params(allparams):
+    """Sets global parameters of the simulation"""
+    logger.debug("Setting global parameters")
+    for param_name, param_val in allparams.items():
+        if re.match(".*_GluSynapse$", param_name):
+            setattr(bglibpy.neuron.h, param_name, param_val)
+            logger.debug("\t%s = %f", param_name, getattr(bglibpy.neuron.h, param_name))
+
+
+def _set_local_params(synapse, fit_params, extra_params, c_pre=0., c_post=0.):
+    """Sets synaptic parameters in BGLibPy"""
+    # update basic synapse parameters
+    for param in extra_params:
+        if param  == "loc":
+            continue
+        setattr(synapse.hsynapse, param, extra_params[param])
+    # update thresholds
+    if fit_params is not None:
+        if all(key in fit_params for key in ["a00", "a01"]) and extra_params["loc"] == "basal":
+            # set basal depression threshold
+            synapse.hsynapse.theta_d_GB = fit_params["a00"]*c_pre + fit_params["a01"]*c_post
+        if all(key in fit_params for key in ["a10", "a11"]) and extra_params["loc"] == "basal":
+            # set basal potentiation threshold
+            synapse.hsynapse.theta_p_GB = fit_params["a10"]*c_pre + fit_params["a11"]*c_post
+        if all(key in fit_params for key in ["a20", "a21"]) and extra_params["loc"] == "apical":
+            # set apical depression threshold
+            synapse.hsynapse.theta_d_GB = fit_params["a20"]*c_pre + fit_params["a21"]*c_post
+        if all(key in fit_params for key in ["a30", "a31"]) and extra_params["loc"] == "apical":
+            # set apical potentiation threshold
+            synapse.hsynapse.theta_p_GB = fit_params["a30"]*c_pre + fit_params["a31"]*c_post
+
+
+def _c_pre_finder_process(bc, fit_params, syn_extra_params, pre_gid, post_gid, fixhp):
+    """
+    Multiprocessing subprocess for `c_pre_finder()`
+    Delivers spike from `pre_gid` and measures the Ca++ transient at the synapses on `post_gid`
+    """
+    logger.debug("c_pre finder process")
+    ssim = bglibpy.SSim(bc)
+    ssim.instantiate_gids([post_gid], synapse_detail=1, add_synapses=True,
+                          pre_spike_trains={pre_gid: [1000.]},
+                          intersect_pre_gids=[pre_gid])
+    cell = ssim.cells[post_gid]
+    # hyperpolarization workaround
+    if fixhp:
+        for sec in cell.somatic + cell.axonal:
+            sec.uninsert("SK_E2")
+    # setup global parameters
+    if fit_params is not None:
+        _set_global_params(fit_params)
+    # initialize effcai recorder
+    recorder = {}
+    # setup synapses
+    syn_idx = []
+    for syn_id, synapse in cell.synapses.items():
+        syn_idx.append(syn_id)
+        logger.debug("Configuring synapse %d", syn_id)
+        # configure local parameters
+        _set_local_params(synapse, fit_params, syn_extra_params[syn_id])
+        # set recorder
+        recorder[syn_id] = bglibpy.neuron.h.Vector()
+        recorder[syn_id].record(synapse.hsynapse._ref_effcai_GB)
+        # override rho
+        synapse.hsynapse.rho0_GB = 1
+        # override Use
+        synapse.hsynapse.Use0_TM = 1
+        synapse.hsynapse.Use_p_TM = 1
+        # override gmax_AMPA
+        synapse.hsynapse.gmax0_AMPA = synapse.hsynapse.gmax_p_AMPA
+        # disable LTP / LTD
+        synapse.hsynapse.theta_d_GB = -1
+        synapse.hsynapse.theta_p_GB = -1
+    # run
+    ssim.run(2500, cvode=True)
+    logger.debug("Simulation completed")
+    # compute calcium peak
+    return {syn_id: recorder[syn_id].max() for syn_id in syn_idx}
+
+
+def c_pre_finder(bc, fit_params, syn_extra_params, pre_gid, post_gid, fixhp=True):
+    """Replays spike from `pre_gid` and measures Ca++ transient in synapses on `post_gid`"""
+    pool = multiprocessing.Pool(processes=1)
+    c_pre = pool.apply(_c_pre_finder_process, [bc, fit_params, syn_extra_params, pre_gid, post_gid, fixhp])
+    pool.terminate()
+    logger.debug("C_pre: %s", str(c_pre))
+    return c_pre
+
+
 def _c_post_finder_process(bc, stimulus, fit_params, syn_extra_params, pre_gid, post_gid, fixhp):
     """
     Multiprocessing subprocess for `c_post_finder()`
@@ -209,48 +242,48 @@ def _c_post_finder_process(bc, stimulus, fit_params, syn_extra_params, pre_gid, 
     ssim.instantiate_gids([post_gid], synapse_detail=1, add_synapses=True,
                           intersect_pre_gids=[pre_gid])
     cell = ssim.cells[post_gid]
-    # Hyperpolarization workaround
+    # hyperpolarization workaround
     if fixhp:
         for sec in cell.somatic + cell.axonal:
             sec.uninsert("SK_E2")
-    # Add stimuli
+    # add stimuli
     tstim = bglibpy.neuron.h.TStim(0.5, sec=cell.soma)
     stim_duration = (stimulus["nspikes"] - 1) * 1000./stimulus["freq"] + stimulus["width"]
     tstim.train(stimulus["offset"], stim_duration, stimulus["amp"], stimulus["freq"], stimulus["width"])
     cell.persistent.append(tstim)
-    # Setup global parameters
+    # setup global parameters
     if fit_params is not None:
         _set_global_params(fit_params)
-    # Initialize effcai recorder
+    # initialize effcai recorder
     recorder = {}
-    # Setup synapses
+    # setup synapses
     syn_idx = []
     for syn_id, synapse in cell.synapses.items():
         syn_idx.append(syn_id)
         logger.debug("Configuring synapse %d", syn_id)
-        # Configure local parameters
+        # configure local parameters
         _set_local_params(synapse, fit_params, syn_extra_params[syn_id])
-        # Set recorder
+        # set recorder
         recorder[syn_id] = bglibpy.neuron.h.Vector()
         recorder[syn_id].record(synapse.hsynapse._ref_effcai_GB)
-        # Disable LTP / LTD
+        # disable LTP / LTD
         synapse.hsynapse.theta_d_GB = -1
         synapse.hsynapse.theta_p_GB = -1
-    # Run
+    # run
     ssim.run(1500, cvode=True)
     logger.debug("Simulation completed")
-    # Get soma voltage and simulation time vector
+    # get soma voltage and simulation time vector
     t = np.array(ssim.get_time())
     v = np.array(ssim.get_voltage_traces()[post_gid])
-    # Get spike timing (skip 200 ms)
+    # get spike timing (skip 200 ms)
     dt_int = 0.025
     tdense = np.linspace(min(t), max(t), int((max(t)-min(t))/dt_int))
     vdense = np.interp(tdense, t, v)
     spikes = np.array([tdense[i+1] for i in range(int(200/dt_int), len(vdense) - 1)
                        if vdense[i] < -30 and vdense[i+1] >= -30])
-    # Compute c_post
+    # compute c_post
     c_post = {syn_id: recorder[syn_id].max() for syn_id in syn_idx}
-    # Store results
+    # store results
     results = {"c_post": c_post,
                "c_trace": {syn_id: np.array(recorder[syn_id]) for syn_id in syn_idx},
                "t": t,
@@ -267,20 +300,20 @@ def c_post_finder(bc, fit_params, syn_extra_params, pre_gid, post_gid, stimulus,
     and then measures the Ca++ transient of the backpropagating AP.
     """
 
-    # Find c_post
+    # find c_post
     logger.debug("Stimulating cell with {} nA pulse ({} ms)".format(stimulus["amp"], stimulus["width"]))
     pool = multiprocessing.Pool(processes=1)
     results = pool.apply(_c_post_finder_process, [bc, stimulus, fit_params, syn_extra_params,
                                                   pre_gid, post_gid, fixhp])
     pool.terminate()
 
-    # Validate number of spikes
+    # validate number of spikes
     logger.debug("Spike timing: {}".format(results["t_spikes"]))
     if len(results["t_spikes"]) < 1:
-        # Special case, small integration differences with threshold detection sim
+        # special case, small integration differences with threshold detection sim
         warnings.warn("Cell not spiking as expected during c_post,"
                       "attempting to bump stimulus amplitude before failing...")
-        # Find c_post
+        # find c_post
         amp = stimulus["amp"] + 0.05
         logger.debug("Stimulating cell with %f nA pulse", amp)
         stimulus = {"nspikes": 1, "freq": 0.1, "width": stimulus["width"], "offset": 1000., "amp": amp}

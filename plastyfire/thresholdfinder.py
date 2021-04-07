@@ -10,11 +10,12 @@ import time
 import yaml
 import argparse
 import logging
+import warnings
 from cached_property import cached_property
 import numpy as np
 import pandas as pd
 from bluepy.v2 import Circuit
-from bluepy.v2.enums import Cell
+from bluepy.v2.enums import Cell, Synapse
 
 
 logging.basicConfig(level=logging.INFO)
@@ -23,7 +24,7 @@ L = logging.getLogger("thresholdfinder")
 # parameters to store (with names corresponding to GluSynapse.mod)
 params = ["Use0_TM", "Dep_TM", "Fac_TM", "Nrrp_TM", "gmax0_AMPA", "volume_CR",  # base 5 params + volume for GluSynapse
           "rho0_GB", "Use_d_TM", "Use_p_TM", "gmax_d_AMPA", "gmax_p_AMPA",  # generated (see `plastifyre.epg`)
-          "gmax_NMDA", "loc",  # not used in further steps but saved anyways (for ML stuff?)
+          "gmax_NMDA", "loc", "dist", "inp_imp",  # not used in further steps but saved anyways for ML stuff
           "theta_d", "theta_p"]  # calculated from c_pre and c_post + optimized GluSynapse params
 
 
@@ -100,7 +101,7 @@ class ThresholdFinder(object):
         """Finds c_pre and c_post (see `plastyfire.simulator`) for all afferents of `post_gid`,
         calculates thresholds used in GluSynapse, stores them in a MultiIndex DataFrame, and saves them to csv."""
         from plastyfire.epg import ParamsGenerator
-        from plastyfire.simulator import spike_threshold_finder, c_pre_finder, c_post_finder
+        from plastyfire.simulator import inp_imp_finder, spike_threshold_finder, c_pre_finder, c_post_finder
 
         # get afferent gids (of `post_gid` within the given target)
         c = Circuit(self.bc)
@@ -110,7 +111,14 @@ class ThresholdFinder(object):
         df = init_df(c, pre_gids, post_gid)
         # init Glusynapse parameter generator (with correlations)
         pgen = ParamsGenerator(c, self.extra_recipe_path)
-
+        # get synapse locations
+        warnings.filterwarnings("ignore", category=UserWarning)  # to disable ascii morph warning ...
+        syn_locs = c.connectome.pathway_synapses(pre_gids, post_gid, [Synapse.POST_SECTION_ID,
+                                                 "afferent_section_pos", Synapse.POST_NEURITE_DISTANCE])
+        syn_locs = syn_locs.rename(columns={Synapse.POST_SECTION_ID: "sec_id", "afferent_section_pos": "pos",
+                                            Synapse.POST_NEURITE_DISTANCE: "dist"})
+        # calculate input impedance at all synapse locations
+        inp_imps = inp_imp_finder(self.bc, post_gid, syn_locs, True)
         # first test if gid can be stimulated to elicit a single spike
         L.info("Finding stimulus for gid %i (%s)" % (post_gid, c.cells.get(post_gid, Cell.MTYPE)))
         t1 = time.time()
@@ -141,12 +149,19 @@ class ThresholdFinder(object):
                                                 self.fit_params["a31"] * c_post[syn_id]
                     else:
                         raise ValueError("Unknown location")
+                    # add synapse location related parameters as well before storing all params
+                    syn_params["dist"] = syn_locs.loc[syn_id, "dist"]
+                    syn_params["inp_imp"] = inp_imps[syn_id]
                 store_params(df, conn_params)
                 gc.collect()
         else:  # if not, keep negative threshols as initialized in the DataFrame (no plasticity)
             L.info("Stimulus couldn't be calibrated, skipping simulations, setting negative thresholds.")
             for pre_gid in pre_gids:
                 conn_params = pgen.generate_params(pre_gid, post_gid)
+                for syn_id, syn_params in conn_params.items():
+                    # add synapse location related parameters as well before storing all params
+                    syn_params["dist"] = syn_locs.loc[syn_id, "dist"]
+                    syn_params["inp_imp"] = inp_imps[syn_id]
                 store_params(df, conn_params)
         # save results to csv
         L.info("Saving results to out/%i.csv" % post_gid)
