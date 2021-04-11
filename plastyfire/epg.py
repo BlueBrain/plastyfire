@@ -123,4 +123,3 @@ class ParamsGenerator(object):
                 raise ValueError("Unknown neurite type")
             syn_params[syn_id] = params
         return syn_params
-
