@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Writes sbatch scripts for every gid (given a circuit and a target in the config file)
-last modified: András Ecker 03.2021
+last modified: András Ecker 04.2021
 """
 
 import os
@@ -59,7 +59,7 @@ class SimWriter(object):
 
     def write_batch_sript(self, f_name, templ, gid, cpu_time, qos):
         """Writes single cell batch script"""
-        with open(f_name, "w", encoding="latin1") as f:
+        with open(f_name, "w+", encoding="latin1") as f:
             f.write(templ.format(name="plast_%i" % gid, cpu_time=cpu_time, qos=qos,
                                  config=self.config_path, gid=gid))
 
