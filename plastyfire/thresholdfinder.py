@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Runscript for single cell simulations that find the depression and potentiation thresholds used in GluSynapse
-last modified: András Ecker 03.2021
+last modified: András Ecker 04.2021
 """
 
 import os

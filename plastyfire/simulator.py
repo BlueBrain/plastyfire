@@ -1,8 +1,8 @@
 """
 Single cell simulations in BGLibPy
 last modified: Giuseppe Chindemi, 03.2020
-+ deleting parts that aren't used for generalization
-and minor changes for BGLibPy compatibility by András Ecker, 03.2021
++ deleting parts that aren't used for generalization, adding input impedance calculation (for ML)
+and minor changes for BGLibPy compatibility by András Ecker, 04.2021
 """
 
 import re
