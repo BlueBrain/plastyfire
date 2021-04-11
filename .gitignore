@@ -3,7 +3,6 @@ build/
 dist/
 doc/
 extra/
-helpersim/
 tests/
 CHANGELOG.rst
 MANIFEST.in
