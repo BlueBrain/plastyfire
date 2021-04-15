@@ -10,6 +10,8 @@ from tqdm import tqdm
 from cached_property import cached_property
 import numpy as np
 import pandas as pd
+from bluepy.v2 import Circuit
+from bluepy.v2.enums import Cell
 
 
 # parameters to use for machine learning (the rest is either correlated with these, or not important)
@@ -69,8 +71,6 @@ class MLDataGenerator(object):
     def merge_csvs(self, save):
         """Loads in saved results from all (finished) sims and after some preprocessing
         concatenates them to a big DataFrame to be used for machine learning"""
-        from bluepy.v2 import Circuit
-        from bluepy.v2.enums import Cell
         c = Circuit(self.bc)
         gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
         ss_gids = c.cells.ids({"$target": self.target, Cell.MTYPE: "L4_SSC"})
