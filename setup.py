@@ -26,6 +26,7 @@ setup(
                       "numpy>=1.19.4",
                       "scipy>=1.6.0",
                       "pandas>=1.2.1",
+                      "xgboost>=1.4.0",
                       "libsonata>=0.1.6",
                       ] + [
                       "bluepy[all]==0.16.0",
