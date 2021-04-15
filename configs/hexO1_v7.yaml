@@ -5,9 +5,9 @@ circuit:
 
 extra_recipe_path: "/gpfs/bbp.cscs.ch/project/proj96/circuits/plastic_v1/recipe.csv"
 
-out_sonata_fname: "/gpfs/bbp.cscs.ch/project/proj96/circuits/plastic_v1/edges.sonata"
-
 sims_dir: "/gpfs/bbp.cscs.ch/project/proj96/scratch/home/ecker/plastyfire/"
+
+out_dir: "/gpfs/bbp.cscs.ch/project/proj96/circuits/plastic_v1/"
 
 fit_params:
     tau_effca_GB_GluSynapse: 278.3177658387

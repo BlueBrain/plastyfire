@@ -76,12 +76,16 @@ class SonataWriter(object):
         return self.config["circuit"]["path"]
 
     @property
-    def out_sonata_fname(self):
-        return self.config["out_sonata_fname"]
+    def out_dir(self):
+        return self.config["out_dir"]
 
     @cached_property
     def inp_sonata_fname(self):
         return Circuit(self.circuit_path).config["connectome"]
+
+    @property
+    def out_sonata_fname(self):
+        return os.path.join(self.out_dir, "edges.sonata")
 
     def init_sonata(self):
         """Copies base circuit's sonata connectome and adds extra fields"""
