@@ -98,7 +98,7 @@ class SimWriter(object):
                 for f_name in f_names[start:end]:
                     f.write("sbatch %s\n" % f_name)
 
-    def relaunch_failed_jobs(self, error):
+    def relaunch_failed_jobs(self, error, verbose=False):
         """Checks output files and if they aren't presents checks logs for specific `error`
         and creates master launch script to relaunch all failed jobs"""
         c = Circuit(os.path.join(self.sims_dir, "BlueConfig"))
@@ -108,17 +108,22 @@ class SimWriter(object):
             if not os.path.isfile(os.path.join(self.sims_dir, "out", "%i.csv" % gid)):
                 f_name = os.path.join(self.sims_dir, "sbatch", "sim_%i.log" % gid)
                 if os.path.isfile(f_name):
+                    if verbose:
+                        print(f_name)
                     with open(f_name, "r") as f:
                         if error in f.readlines()[-1]:
                             f_names.append(os.path.join(self.sims_dir, "sbatch", "sim_%i.batch" % gid))
-        with open(os.path.join(self.sims_dir, "sbatch", "relaunch_failed.sh"), "w") as f:
-            for f_name in f_names:
-                f.write("sbatch %s\n" % f_name)
+        if len(f_names):
+            with open(os.path.join(self.sims_dir, "sbatch", "relaunch_failed.sh"), "w") as f:
+                for f_name in f_names:
+                    f.write("sbatch %s\n" % f_name)
+            if verbose:
+                print("Generated relaunch_failed.sh master launch script with %i jobs" % len(f_names))
 
 
 if __name__ == "__main__":
 
     config = "/gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/configs/hexO1_v7.yaml"
     writer = SimWriter(config)
-    writer.write_sim_files()
-    #writer.relaunch_failed_jobs("SyntaxError:")
+    # writer.write_sim_files()
+    writer.relaunch_failed_jobs("slurmstepd:", True)
