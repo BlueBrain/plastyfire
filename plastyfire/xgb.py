@@ -5,6 +5,7 @@ last modified: András Ecker 04.2021
 """
 
 import os
+import gc
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
@@ -13,16 +14,21 @@ import xgboost as xgb
 
 def add_features(data):
     """Adds extra features to the data before ML (as we only have a few) - to be discussed and updated..."""
-    data["Ca_related"] = data["gmax_NMDA"] * data["volume_CR"]
     data["loc_related"] = data["dist"] * data["inp_imp"]
-    data["dist_2"] = data["dist"]**2
-    data["inp_imp_2"] = data["inp_imp"]**2
-    data["volume_CR_2"] = data["volume_CR"]**2
+    # these seem to be lognormally distributed so adding log
+    data["log_inp_imp"] = np.log(data["inp_imp"])
+    data["log_volume_CR"] = np.log(data["volume_CR"])
+    # one-hot encode categorical features
+    data = pd.get_dummies(data, columns=["loc", "post_mtype"])
+    data = data.drop("loc_basal", axis=1)  # only 2 categories so no need to keep both
+    return data
 
 
 def split_data(data, y, train_size=0.8, seed=12345):
     """Split data into train and test datasets"""
     assert y in ["c_pre", "c_post", "theta_d", "theta_p"]
+    if y == "c_post":
+        data = data.drop(["gmax_p_AMPA", "gmax_NMDA", "gsynSRSF"], axis=1)  # synapse params. don't matter for bAP
     idx = np.arange(len(data))
     np.random.seed(seed)
     np.random.shuffle(idx)
@@ -46,6 +52,7 @@ def optimize_model(dtrain, gpu, max_depths, min_child_weights, gammas,
               "lambda": lambdas[0], "alpha": alphas[0], "eta": etas[0]}
     if gpu:
         params["tree_method"] = "gpu_hist"
+        params["predictor"] = "gpu_predictor"
         params["sampling_method"] = "gradient_based"
 
     # optimize tree architecture
@@ -67,6 +74,7 @@ def optimize_model(dtrain, gpu, max_depths, min_child_weights, gammas,
                     opt_max_depth = max_depth
                     opt_min_child_weight = min_child_weight
                     opt_gamma = gamma
+                gc.collect()
     params["max_depth"] = opt_max_depth
     params["min_child_weight"] = opt_min_child_weight
     params["gamma"] = opt_gamma
@@ -86,6 +94,7 @@ def optimize_model(dtrain, gpu, max_depths, min_child_weights, gammas,
                 min_rmse = rmse
                 opt_subsample = subsample
                 opt_colsample_bytree = colsample_bytree
+            gc.collect()
     params["subsample"] = opt_subsample
     params["colsample_bytree"] = opt_colsample_bytree
 
@@ -104,6 +113,7 @@ def optimize_model(dtrain, gpu, max_depths, min_child_weights, gammas,
                 min_rmse = rmse
                 opt_lambda = lambda_
                 opt_alpha = alpha
+            gc.collect()
     params["lambda"] = opt_lambda
     params["alpha"] = opt_alpha
 
@@ -118,6 +128,7 @@ def optimize_model(dtrain, gpu, max_depths, min_child_weights, gammas,
         if rmse < min_rmse:
             min_rmse = rmse
             opt_eta = eta
+        gc.collect()
     params["eta"] = opt_eta
 
     return params
@@ -126,26 +137,32 @@ def optimize_model(dtrain, gpu, max_depths, min_child_weights, gammas,
 if __name__ == "__main__":
 
     data = pd.read_pickle("/gpfs/bbp.cscs.ch/project/proj96/circuits/plastic_v1/mldata.pkl")
-    add_features(data)  # some feature engineering
+    # sample 3M synapses on each post_mtypes (this way it's balanced and also fits to memory)
+    data = data.groupby("post_mtype", as_index=False, sort=False).apply(lambda x: x.sample(int(min(3e6, len(x)))))
+    data = add_features(data)  # some feature engineering
     gpu = True if os.system("nvidia-smi") == 0 else False  # tricky way to find out if GPU is available...
-    for th in ["theta_d", "theta_p"]:
+    for y in ["c_pre", "c_post"]:
         # split data into training and testing and get it to xgb's preferred format
-        X_train, X_test, y_train, y_test = split_data(data, y=th)
+        X_train, X_test, y_train, y_test = split_data(data, y=y)
         dtrain = xgb.DMatrix(data=X_train, label=y_train)
         dtest = xgb.DMatrix(data=X_test, label=y_test)
+        del X_train, X_test, y_train, y_test
+        gc.collect()
         # hyperparameter optimization (with cross-validation using only the training dataset)
         opt_params = optimize_model(dtrain, gpu,
-                                    max_depths=[8, 12, 16], min_child_weights=[4, 8, 12], gammas=[0, 1, 2],
-                                    subsamples=[0.5, 0.25, 0.2, 0.1], colsamples_bytree=[1., 0.9, 0.8],
-                                    lambdas=[0.4, 0.6, 0.8], alphas=[0.4, 0.6, 0.8], etas=[0.2, 0.1, 0.05])
+                                    max_depths=[6, 8, 10, 12], min_child_weights=[3, 6, 9, 12], gammas=[0],
+                                    subsamples=[1.0, 0.8, 0.5], colsamples_bytree=[1., 0.9, 0.8],
+                                    lambdas=[0.6, 0.8, 1.0], alphas=[0.6, 0.8, 1.0], etas=[0.2, 0.1, 0.05, 0.02])
         print(opt_params)
         # training final model and measuring accuracy on (unseen) test dataset
         model = xgb.train(opt_params, dtrain, num_boost_round=1000, early_stopping_rounds=50,
                           evals=[(dtest, "eval")], verbose_eval=False)
-        print("%s model trained in %i iterations - RMSE: %.6f" % (th, model.best_iteration+1, model.best_score))
+        print("%s model trained in %i iterations - test RMSE: %.6f" % (y, model.best_iteration+1, model.best_score))
         feature_order = [x[0] for x in sorted(model.get_score(importance_type="gain").items(),
                                               key=lambda x: x[1], reverse=True)]
         print("Importance of features: ", feature_order)
+        del model, dtrain, dtest
+        gc.collect()
 
 
 
