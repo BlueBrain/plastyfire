@@ -73,14 +73,17 @@ class MLDataGenerator(object):
         concatenates them to a big DataFrame to be used for machine learning"""
         c = Circuit(self.bc)
         gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
-        ss_gids = c.cells.ids({"$target": self.target, Cell.MTYPE: "L4_SSC"})
+        mtypes = c.cells.get(gids, Cell.MTYPE).to_numpy()
+        ss_gids = gids[mtypes == "L4_SSC"]
         n = 0
         dfs = []
-        for gid in tqdm(gids, desc="Loading saved results", miniters=len(gids)/100):
+        for gid, mtype in tqdm(zip(gids, mtypes), total=len(gids),
+                               desc="Loading saved results", miniters=len(gids)/100):
             f_name = os.path.join(self.sims_dir, "out", "%i.csv" % gid)
             if os.path.isfile(f_name):
                 n += 1
                 df = pd.read_csv(f_name, usecols=usecols, index_col=[0, 1])
+                df["post_mtype"] = mtype
                 # filter out SS to SS synapses (those won't be plastic - see Chindemi et al. 2020, bioRxiv)
                 if gid in ss_gids:
                     pre_gids = df.index.get_level_values("pre_gid").to_numpy()
@@ -91,13 +94,12 @@ class MLDataGenerator(object):
         print("Loaded data from %i/%i (%.2f%% of) cells." % (n, len(gids), (100 * n) / len(gids)))
         df = pd.concat(dfs)
         # some basic feature engineering and cleaning
-        df = df.replace({"apical": 1, "basal": 0}).rename(columns={"loc": "apical"})  # one-hot encode location
         df["gsynSRSF"] = df["gmax_NMDA"] / df["gmax0_AMPA"]  # add NMDA/AMPA ratio
         df = df.drop("gmax0_AMPA", axis=1)  # drop baseline AMPA cond. as only the pot. is used in the c_pre sims.
         # drop rows where depression th. is higher then potentiation th.
         df = df.drop(df.query("theta_d >= theta_p").index)
         # add c_pre and c_post
-        cond = [(df["apical"] == 1), (df["apical"] == 0)]
+        cond = [(df["loc"] == "apical"), (df["loc"] == "basal")]
         c_pres = [(self.inv_params["a20"] * df["theta_d"] + self.inv_params["a21"] * df["theta_p"]),
                   (self.inv_params["a00"] * df["theta_d"] + self.inv_params["a01"] * df["theta_p"])]
         c_posts = [(self.inv_params["a30"] * df["theta_d"] + self.inv_params["a31"] * df["theta_p"]),
