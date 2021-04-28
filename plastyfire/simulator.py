@@ -6,7 +6,6 @@ and minor changes for BGLibPy compatibility by András Ecker, 04.2021
 """
 
 import re
-import warnings
 import logging
 import multiprocessing
 import numpy as np
@@ -299,20 +298,18 @@ def c_post_finder(bc, fit_params, syn_extra_params, pre_gid, post_gid, stimulus,
     To do so it calculates the necessary current to make `post_gid` fire a single AP
     and then measures the Ca++ transient of the backpropagating AP.
     """
-
     # find c_post
     logger.debug("Stimulating cell with {} nA pulse ({} ms)".format(stimulus["amp"], stimulus["width"]))
     pool = multiprocessing.Pool(processes=1)
     results = pool.apply(_c_post_finder_process, [bc, stimulus, fit_params, syn_extra_params,
                                                   pre_gid, post_gid, fixhp])
     pool.terminate()
-
     # validate number of spikes
     logger.debug("Spike timing: {}".format(results["t_spikes"]))
     if len(results["t_spikes"]) < 1:
         # special case, small integration differences with threshold detection sim
-        warnings.warn("Cell not spiking as expected during c_post,"
-                      "attempting to bump stimulus amplitude before failing...")
+        logger.debug("Cell not spiking as expected during c_post, "
+                     "attempting to bump stimulus amplitude before failing...")
         # find c_post
         amp = stimulus["amp"] + 0.05
         logger.debug("Stimulating cell with %f nA pulse", amp)
@@ -321,6 +318,6 @@ def c_post_finder(bc, fit_params, syn_extra_params, pre_gid, post_gid, stimulus,
         results = pool.apply(_c_post_finder_process, [bc, stimulus, fit_params, syn_extra_params,
                                                       pre_gid, post_gid, fixhp])
         pool.terminate()
-        assert len(results["t_spikes"]) == 1
+        return results["c_post"] if len(results["t_spikes"]) == 1 else None
     return results["c_post"]
 

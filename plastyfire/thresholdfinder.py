@@ -136,19 +136,20 @@ class ThresholdFinder(object):
                 conn_params = pgen.generate_params(pre_gid, post_gid)
                 c_pre = c_pre_finder(self.bc, self.fit_params, conn_params, pre_gid, post_gid, True)
                 c_post = c_post_finder(self.bc, self.fit_params, conn_params, pre_gid, post_gid, stimulus, True)
-                for syn_id, syn_params in conn_params.items():
-                    if syn_params["loc"] == "basal":
-                        syn_params["theta_d"] = self.fit_params["a00"] * c_pre[syn_id] + \
-                                                self.fit_params["a01"] * c_post[syn_id]
-                        syn_params["theta_p"] = self.fit_params["a10"] * c_pre[syn_id] + \
-                                                self.fit_params["a11"] * c_post[syn_id]
-                    elif syn_params["loc"] == "apical":
-                        syn_params["theta_d"] = self.fit_params["a20"] * c_pre[syn_id] + \
-                                                self.fit_params["a21"] * c_post[syn_id]
-                        syn_params["theta_p"] = self.fit_params["a30"] * c_pre[syn_id] + \
-                                                self.fit_params["a31"] * c_post[syn_id]
-                    else:
-                        raise ValueError("Unknown location")
+                if c_post is not None:
+                    for syn_id, syn_params in conn_params.items():
+                        if syn_params["loc"] == "basal":
+                            syn_params["theta_d"] = self.fit_params["a00"] * c_pre[syn_id] + \
+                                                    self.fit_params["a01"] * c_post[syn_id]
+                            syn_params["theta_p"] = self.fit_params["a10"] * c_pre[syn_id] + \
+                                                    self.fit_params["a11"] * c_post[syn_id]
+                        elif syn_params["loc"] == "apical":
+                            syn_params["theta_d"] = self.fit_params["a20"] * c_pre[syn_id] + \
+                                                    self.fit_params["a21"] * c_post[syn_id]
+                            syn_params["theta_p"] = self.fit_params["a30"] * c_pre[syn_id] + \
+                                                    self.fit_params["a31"] * c_post[syn_id]
+                        else:
+                            raise ValueError("Unknown location")
                     # add synapse location related parameters as well before storing all params
                     syn_params["dist"] = syn_locs.loc[syn_id, "dist"]
                     syn_params["inp_imp"] = inp_imps[syn_id]
