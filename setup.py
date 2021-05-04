@@ -26,8 +26,9 @@ setup(
                       "numpy>=1.19.4",
                       "scipy>=1.6.0",
                       "pandas>=1.2.1",
-                      "xgboost>=1.4.0",
                       "libsonata>=0.1.6",
+                      "xgboost>=1.4.0",
+                      "bayesian-optimization>=1.2.0"
                       ] + [
                       "bluepy[all]==0.16.0",
                       "bglibpy<4.1"  # 4.1 is the first version that doesn't keep global syn_idx
