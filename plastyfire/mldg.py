@@ -1,22 +1,24 @@
 # -*- coding: utf-8 -*-
 """
 Machine learning data generator
-last modified: András Ecker 04.2021
+last modified: András Ecker 05.2021
 """
 
 import os
+import gc
 import yaml
 from tqdm import tqdm
 from cached_property import cached_property
 import numpy as np
 import pandas as pd
 from bluepy.v2 import Circuit
-from bluepy.v2.enums import Cell
+from bluepy.v2.enums import Cell, Synapse
 
 
 # parameters to use for machine learning (the rest is either correlated with these, or not important)
-usecols = ["pre_gid", "syn_id", "gmax0_AMPA", "gmax_p_AMPA", "gmax_NMDA", "volume_CR",
-           "loc", "dist", "inp_imp", "theta_d", "theta_p"]
+usecols = ["syn_id", "gmax_p_AMPA", "gmax_NMDA", "volume_CR", "loc", "theta_d", "theta_p"]
+dtypes = {col: np.float32 if col != "syn_id" else np.int64 for col in usecols}
+dtypes["loc"] = str
 
 
 class MLDataGenerator(object):
@@ -68,36 +70,36 @@ class MLDataGenerator(object):
         return {"a00": inv_basal[0, 0], "a01": inv_basal[0, 1], "a10": inv_basal[1, 0], "a11": inv_basal[1, 1],
                 "a20": inv_apical[0, 0], "a21": inv_apical[0, 1], "a30": inv_apical[1, 0], "a31": inv_apical[1, 1]}
 
-    def merge_csvs(self, save):
-        """Loads in saved results from all (finished) sims and after some preprocessing
+    def merge_csvs(self):
+        """Loads in saved results from all sims and after some preprocessing
         concatenates them to a big DataFrame to be used for machine learning"""
         c = Circuit(self.bc)
         gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
         mtypes = c.cells.get(gids, Cell.MTYPE).to_numpy()
-        ss_gids = gids[mtypes == "L4_SSC"]
-        n = 0
         dfs = []
         for gid, mtype in tqdm(zip(gids, mtypes), total=len(gids),
                                desc="Loading saved results", miniters=len(gids)/100):
             f_name = os.path.join(self.sims_dir, "out", "%i.csv" % gid)
-            if os.path.isfile(f_name):
-                n += 1
-                df = pd.read_csv(f_name, usecols=usecols, index_col=[0, 1])
-                df["post_mtype"] = mtype
-                # filter out SS to SS synapses (those won't be plastic - see Chindemi et al. 2020, bioRxiv)
-                if gid in ss_gids:
-                    pre_gids = df.index.get_level_values("pre_gid").to_numpy()
-                    df = df.drop(np.intersect1d(pre_gids, ss_gids), level="pre_gid")
-                # only add it to the training data if thresholds were found (default value if not found is -1)
-                if df["theta_d"].values[0] != -1.:
-                    dfs.append(df.droplevel("pre_gid"))
-        print("Loaded data from %i/%i (%.2f%% of) cells." % (n, len(gids), (100 * n) / len(gids)))
+            df = pd.read_csv(f_name, usecols=usecols, index_col=0, dtype=dtypes)
+            df["post_mtype"] = mtype
+            # read additional features (distance and impedance) and merge with the rest
+            f_name = os.path.join(self.sims_dir, "out_mld", "%i.csv" % gid)
+            df_ml = pd.read_csv(f_name, index_col=0, dtype=np.float32)
+            df_ml.index.name = "syn_id"
+            dfs.append(df.join(df_ml))
         df = pd.concat(dfs)
-        # some basic feature engineering and cleaning
-        df["gsynSRSF"] = df["gmax_NMDA"] / df["gmax0_AMPA"]  # add NMDA/AMPA ratio
-        df = df.drop("gmax0_AMPA", axis=1)  # drop baseline AMPA cond. as only the pot. is used in the c_pre sims.
+        del dfs
+        gc.collect()
+        print(len(df))
+        # filter out SS to SS synapses (those won't be plastic - see Chindemi et al. 2020, bioRxiv)
+        ss_gids = gids[mtypes == "L4_SSC"]
+        ss_syn_idx = c.connectome.pathway_synapses(ss_gids, ss_gids)
+        df.drop(ss_syn_idx, inplace=True)
         # drop rows where depression th. is higher then potentiation th.
-        df = df.drop(df.query("theta_d >= theta_p").index)
+        df.drop(df.query("theta_d >= theta_p").index, inplace=True)
+        # drop rows where thresholds were not found (default value if not found is -1)
+        df.drop(df.loc[df["theta_d"] == -1].index, inplace=True)
+        print(len(df))
         # add c_pre and c_post
         cond = [(df["loc"] == "apical"), (df["loc"] == "basal")]
         c_pres = [(self.inv_params["a20"] * df["theta_d"] + self.inv_params["a21"] * df["theta_p"]),
@@ -106,16 +108,13 @@ class MLDataGenerator(object):
                    (self.inv_params["a10"] * df["theta_d"] + self.inv_params["a11"] * df["theta_p"])]
         df["c_pre"] = np.select(cond, c_pres)
         df["c_post"] = np.select(cond, c_posts)
-        if save:
-            df.to_pickle(self.out_fname)
-            print("Dataset of %.2f million samples saved to: %s" % (len(df)/1e6, self.out_fname))
-        else:
-            print("Dataset size: %.2f million samples" % (len(df)/1e6))
-        return df
+        df.to_pickle(self.out_fname)
+        print("Dataset of %.2f million samples saved to: %s" % (len(df)/1e6, self.out_fname))
 
 
 if __name__ == "__main__":
 
     gen = MLDataGenerator("../configs/hexO1_v7.yaml")
-    data = gen.merge_csvs(save=True)
+    gen.merge_csvs()
+
 
