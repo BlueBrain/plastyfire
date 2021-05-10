@@ -5,11 +5,10 @@ last modified: András Ecker 05.2021
 """
 
 import os
-import gc
-from tqdm import tqdm
 import yaml
 import shutil
 import h5py
+from tqdm import tqdm
 from cached_property import cached_property
 import numpy as np
 import pandas as pd
@@ -18,15 +17,16 @@ from bluepy.v2.enums import Cell
 
 
 # GluSynapse extra parameters
-extra_params = ["volume_CR", "rho0_GB", "Use_d_TM", "Use_p_TM", "gmax_d_AMPA", "gmax_p_AMPA", "theta_d", "theta_p"]
+EXTRA_PARAMS = ["volume_CR", "rho0_GB", "Use_d_TM", "Use_p_TM", "gmax_d_AMPA", "gmax_p_AMPA", "theta_d", "theta_p"]
 # Mapping Glusynapse params to existing sonata group names
-param_map = {"Use0_TM": "u_syn", "Dep_TM": "depression_time", "Fac_TM": "facilitation_time",
+PARAM_MAP = {"Use0_TM": "u_syn", "Dep_TM": "depression_time", "Fac_TM": "facilitation_time",
              "Nrrp_TM": "n_rrp_vesicles", "gmax0_AMPA": "conductance"}
 # gmax_NMDA: "conductance * conductance_scale_factor"
 
-usecols = ["syn_id", "Use0_TM", "Dep_TM", "Fac_TM", "Nrrp_TM", "gmax0_AMPA", "volume_CR", "rho0_GB",
+USECOLS = ["syn_id", "Use0_TM", "Dep_TM", "Fac_TM", "Nrrp_TM", "gmax0_AMPA", "volume_CR", "rho0_GB",
            "Use_d_TM", "Use_p_TM", "gmax_d_AMPA", "gmax_p_AMPA", "gmax_NMDA", "theta_d", "theta_p"]
-dtypes = {col: np.float32 if col not in ["syn_id", "Nrrp_TM", "rho0_GB"] else np.int64 for col in usecols}
+DTYPES = {col: np.float32 if col not in ["syn_id", "Nrrp_TM", "rho0_GB"] else np.int64 for col in USECOLS}
+NOT_DEFINED_TH = -1
 
 
 def _get_population(h5f_name):
@@ -72,6 +72,15 @@ def update_population_properties(h5f_name, edge_properties, force=False):
             if force and name in h5f_group:
                 del h5f_group[name]
             h5f_group.create_dataset(name, data=values)
+
+
+def _load_csvs(gids, sims_dir):
+    """Loads in saved results from all single cell simulations"""
+    dfs = []
+    for gid in tqdm(gids, desc="Loading saved results", miniters=len(gids) / 100):
+        f_name = os.path.join(sims_dir, "out", "%i.csv" % gid)
+        dfs.append(pd.read_csv(f_name, usecols=USECOLS, index_col=0, dtype=DTYPES))
+    return pd.concat(dfs)
 
 
 class SonataWriter(object):
@@ -124,10 +133,9 @@ class SonataWriter(object):
         shutil.copyfile(self.inp_sonata_fname, self.out_sonata_fname)
         size = population_size(self.out_sonata_fname)
         # add extra params one-by-one (otherwise there won't be enough memory)
-        for extra_param in extra_params:
-            dtype = np.float32 if extra_param != "rho0_GB" else np.int64
-            fill_value = 0 if extra_param not in ["theta_d", "theta_p"] else -1
-            edge_properties = {extra_param: np.full((size,), fill_value=fill_value, dtype=dtype)}
+        for extra_param in EXTRA_PARAMS:
+            fill_value = 0 if extra_param not in ["theta_d", "theta_p"] else NOT_DEFINED_TH
+            edge_properties = {extra_param: np.full((size,), fill_value=fill_value, dtype=DTYPES[extra_param])}
             update_population_properties(self.out_sonata_fname, edge_properties, force=True)
 
     def merge_csvs(self, save=True):
@@ -135,22 +143,16 @@ class SonataWriter(object):
         concatenates them to a big DataFrame to be used in the sonata edge file"""
         c = Circuit(self.bc)
         gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
-        dfs = []
-        for gid in tqdm(gids, desc="Loading saved results", miniters=len(gids)/100):
-            f_name = os.path.join(self.sims_dir, "out", "%i.csv" % gid)
-            dfs.append(pd.read_csv(f_name, usecols=usecols, index_col=0, dtype=dtypes))
-        df = pd.concat(dfs)
-        del dfs
-        gc.collect()
+        df = _load_csvs(gids, self.sims_dir)
         # set SS to SS thresholds to -1 (those won't be plastic - see Chindemi et al. 2020, bioRxiv)
         ss_gids = c.cells.ids({"$target": self.target, Cell.MTYPE: "L4_SSC"})
         ss_syn_idx = c.connectome.pathway_synapses(ss_gids, ss_gids)
-        df.loc[ss_syn_idx, "theta_d"] = -1
-        df.loc[ss_syn_idx, "theta_p"] = -1
+        df.loc[ss_syn_idx, "theta_d"] = NOT_DEFINED_TH
+        df.loc[ss_syn_idx, "theta_p"] = NOT_DEFINED_TH
         # where depression th. is higher then potentiation th. set both to -1
         bad_syn_idx = df.query("theta_d >= theta_p").index  # this cond. will find -1 -1 and reset them again to -1 -1
-        df.loc[bad_syn_idx, "theta_d"] = -1
-        df.loc[bad_syn_idx, "theta_p"] = -1
+        df.loc[bad_syn_idx, "theta_d"] = NOT_DEFINED_TH
+        df.loc[bad_syn_idx, "theta_p"] = NOT_DEFINED_TH
         if save:
             df.to_pickle(self.out_pkl_fname)
             print("Dataset of %.2f million samples saved to: %s" % (len(df) / 1e6, self.out_pkl_fname))
@@ -160,7 +162,7 @@ class SonataWriter(object):
         """Updates sonata edge properties with values from merged DataFrame"""
         idx = df.index.to_numpy()
         # update base params one-by-one (otherwise there won't be enough memory)
-        for glusynapse_name, sonata_name in param_map.items():
+        for glusynapse_name, sonata_name in PARAM_MAP.items():
             # get values from sonata file, update with the new ones and write back to sonata
             values = get_property(self.out_sonata_fname, sonata_name)
             values[idx] = df[glusynapse_name].to_numpy()
@@ -170,7 +172,7 @@ class SonataWriter(object):
         values[idx] = (df["gmax_NMDA"]/df["gmax0_AMPA"]).round(2).to_numpy()
         update_population_properties(self.out_sonata_fname, {"conductance_scale_factor": values}, force=True)
         # update extra params one-by-one (otherwise there won't be enough memory)
-        for extra_param in extra_params:
+        for extra_param in EXTRA_PARAMS:
             # get placeholder values from sonata file (see `init_sonata`), set the correct values and write to sonata
             values = get_property(self.out_sonata_fname, extra_param)
             values[idx] = df[extra_param].to_numpy()
