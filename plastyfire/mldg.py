@@ -5,7 +5,6 @@ last modified: András Ecker 05.2021
 """
 
 import os
-import gc
 import yaml
 from tqdm import tqdm
 from cached_property import cached_property
@@ -19,6 +18,29 @@ from bluepy.v2.enums import Cell, Synapse
 usecols = ["syn_id", "gmax_p_AMPA", "gmax_NMDA", "volume_CR", "loc", "theta_d", "theta_p"]
 dtypes = {col: np.float32 if col != "syn_id" else np.int64 for col in usecols}
 dtypes["loc"] = str
+
+
+def _load_csvs(gids, mtypes, sims_dir):
+    """Loads in saved results from all single cell simulations"""
+    dfs = []
+    for gid, mtype in tqdm(zip(gids, mtypes), total=len(gids),
+                           desc="Loading saved results", miniters=len(gids) / 100):
+        f_name = os.path.join(sims_dir, "out", "%i.csv" % gid)
+        df = pd.read_csv(f_name, usecols=usecols, index_col=0, dtype=dtypes)
+        df["post_mtype"] = mtype
+        dfs.append(df)
+    return pd.concat(dfs)
+
+
+def _load_extra_csvs(gids, sims_dir):
+    """Loads in saved results from all impedance calculations (used as extra features)"""
+    dfs = []
+    for gid in tqdm(gids, desc="Loading saved results", miniters=len(gids) / 100):
+        f_name = os.path.join(sims_dir, "out_mld", "%i.csv" % gid)
+        dfs.append(pd.read_csv(f_name, index_col=0, dtype=np.float32))
+    df = pd.concat(dfs)
+    df.index.name = "syn_id"
+    return df
 
 
 class MLDataGenerator(object):
@@ -71,35 +93,18 @@ class MLDataGenerator(object):
                 "a20": inv_apical[0, 0], "a21": inv_apical[0, 1], "a30": inv_apical[1, 0], "a31": inv_apical[1, 1]}
 
     def merge_csvs(self):
-        """Loads in saved results from all sims and after some preprocessing
+        """Loads in saved results and after some preprocessing
         concatenates them to a big DataFrame to be used for machine learning"""
         c = Circuit(self.bc)
         gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
         mtypes = c.cells.get(gids, Cell.MTYPE).to_numpy()
-        dfs = []
-        for gid, mtype in tqdm(zip(gids, mtypes), total=len(gids),
-                               desc="Loading saved results", miniters=len(gids)/100):
-            f_name = os.path.join(self.sims_dir, "out", "%i.csv" % gid)
-            df = pd.read_csv(f_name, usecols=usecols, index_col=0, dtype=dtypes)
-            df["post_mtype"] = mtype
-            # read additional features (distance and impedance) and merge with the rest
-            f_name = os.path.join(self.sims_dir, "out_mld", "%i.csv" % gid)
-            df_ml = pd.read_csv(f_name, index_col=0, dtype=np.float32)
-            df_ml.index.name = "syn_id"
-            dfs.append(df.join(df_ml))
-        df = pd.concat(dfs)
-        del dfs
-        gc.collect()
-        print(len(df))
+        df = _load_csvs(gids, mtypes, self.sims_dir)
         # filter out SS to SS synapses (those won't be plastic - see Chindemi et al. 2020, bioRxiv)
         ss_gids = gids[mtypes == "L4_SSC"]
         ss_syn_idx = c.connectome.pathway_synapses(ss_gids, ss_gids)
         df.drop(ss_syn_idx, inplace=True)
-        # drop rows where depression th. is higher then potentiation th.
+        # drop rows where depression th. is higher then potentiation th. (and where both are -1)
         df.drop(df.query("theta_d >= theta_p").index, inplace=True)
-        # drop rows where thresholds were not found (default value if not found is -1)
-        df.drop(df.loc[df["theta_d"] == -1].index, inplace=True)
-        print(len(df))
         # add c_pre and c_post
         cond = [(df["loc"] == "apical"), (df["loc"] == "basal")]
         c_pres = [(self.inv_params["a20"] * df["theta_d"] + self.inv_params["a21"] * df["theta_p"]),
@@ -108,6 +113,10 @@ class MLDataGenerator(object):
                    (self.inv_params["a10"] * df["theta_d"] + self.inv_params["a11"] * df["theta_p"])]
         df["c_pre"] = np.select(cond, c_pres)
         df["c_post"] = np.select(cond, c_posts)
+        # read additional features (distance and impedance) and merge with the rest
+        df_ml = _load_extra_csvs(gids, self.sims_dir)
+        df.join(df_ml)
+        print(len(df) / 1e6)
         df.to_pickle(self.out_fname)
         print("Dataset of %.2f million samples saved to: %s" % (len(df)/1e6, self.out_fname))
 
