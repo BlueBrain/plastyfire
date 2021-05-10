@@ -19,9 +19,11 @@ from bluepy.v2.enums import Cell
 
 # GluSynapse extra parameters
 extra_params = ["volume_CR", "rho0_GB", "Use_d_TM", "Use_p_TM", "gmax_d_AMPA", "gmax_p_AMPA", "theta_d", "theta_p"]
-# Note: mapping sonata group names to Glusynapse params
-# "Use0_TM": "u_syn", "Dep_TM": "depression_time", "Fac_TM": "facilitation_time", "Nrrp_TM": "n_rrp_vesicles",
-# "gmax0_AMPA": "conductance", "gmax_NMDA": "conductance * conductance_scale_factor"
+# Mapping Glusynapse params to existing sonata group names
+param_map = {"Use0_TM": "u_syn", "Dep_TM": "depression_time", "Fac_TM": "facilitation_time",
+             "Nrrp_TM": "n_rrp_vesicles", "gmax0_AMPA": "conductance"}
+# gmax_NMDA: "conductance * conductance_scale_factor"
+
 usecols = ["syn_id", "Use0_TM", "Dep_TM", "Fac_TM", "Nrrp_TM", "gmax0_AMPA", "volume_CR", "rho0_GB",
            "Use_d_TM", "Use_p_TM", "gmax_d_AMPA", "gmax_p_AMPA", "gmax_NMDA", "theta_d", "theta_p"]
 dtypes = {col: np.float32 if col not in ["syn_id", "Nrrp_TM", "rho0_GB"] else np.int64 for col in usecols}
@@ -36,8 +38,18 @@ def _get_population(h5f_name):
     return populations[0]
 
 
+def get_property(h5f_name, edge_property):
+    """Gets `edge_property` array from sonata edge file"""
+    population = _get_population(h5f_name)
+    with h5py.File(h5f_name, "r") as h5f:
+        h5f_group = h5f["edges/%s/0" % population]
+        if edge_property not in h5f_group:
+            raise RuntimeError("%s not in the edge file properties" %edge_property)
+        return h5f_group[edge_property][:]
+
+
 def population_size(h5f_name):
-    """Gets size of sonata population"""
+    """Gets size of sonata edge population"""
     population = _get_population(h5f_name)
     with h5py.File(h5f_name, "r") as h5f:
         h5f_group = h5f["edges/%s/0" % population]
@@ -45,7 +57,7 @@ def population_size(h5f_name):
 
 
 def update_population_properties(h5f_name, edge_properties, force=False):
-    """Update sonata population with new properties"""
+    """Update sonata edge population with new properties"""
     assert isinstance(edge_properties, dict)
     population = _get_population(h5f_name)
     with h5py.File(h5f_name, "r+") as h5f:
@@ -63,7 +75,7 @@ def update_population_properties(h5f_name, edge_properties, force=False):
 
 
 class SonataWriter(object):
-    """"""
+    """Class to put simulation results to sonata edge file"""
 
     def __init__(self, config_path):
         """YAML config file based constructor"""
@@ -136,7 +148,7 @@ class SonataWriter(object):
         df.loc[ss_syn_idx, "theta_d"] = -1
         df.loc[ss_syn_idx, "theta_p"] = -1
         # where depression th. is higher then potentiation th. set both to -1
-        bad_syn_idx = df.query("theta_d >= theta_p").index
+        bad_syn_idx = df.query("theta_d >= theta_p").index  # this cond. will find -1 -1 and reset them again to -1 -1
         df.loc[bad_syn_idx, "theta_d"] = -1
         df.loc[bad_syn_idx, "theta_p"] = -1
         if save:
@@ -144,11 +156,32 @@ class SonataWriter(object):
             print("Dataset of %.2f million samples saved to: %s" % (len(df) / 1e6, self.out_pkl_fname))
         return df
 
+    def update_sonata(self, df):
+        """Updates sonata edge properties with values from merged DataFrame"""
+        idx = df.index.to_numpy()
+        # update base params one-by-one (otherwise there won't be enough memory)
+        for glusynapse_name, sonata_name in param_map.items():
+            # get values from sonata file, update with the new ones and write back to sonata
+            values = get_property(self.out_sonata_fname, sonata_name)
+            values[idx] = df[glusynapse_name].to_numpy()
+            update_population_properties(self.out_sonata_fname, {sonata_name: values}, force=True)
+        # NMDA/AMPA conductance ratio is a bit tricky so that's not part of the loop above
+        values = get_property(self.out_sonata_fname, "conductance_scale_factor")
+        values[idx] = (df["gmax_NMDA"]/df["gmax0_AMPA"]).round(2).to_numpy()
+        update_population_properties(self.out_sonata_fname, {"conductance_scale_factor": values}, force=True)
+        # update extra params one-by-one (otherwise there won't be enough memory)
+        for extra_param in extra_params:
+            # get placeholder values from sonata file (see `init_sonata`), set the correct values and write to sonata
+            values = get_property(self.out_sonata_fname, extra_param)
+            values[idx] = df[extra_param].to_numpy()
+            update_population_properties(self.out_sonata_fname, {extra_param: values}, force=True)
+
 
 if __name__ == "__main__":
 
     writer = SonataWriter("../configs/hexO1_v7.yaml")
-    # writer.init_sonata()
+    writer.init_sonata()
     df = writer.merge_csvs()
+    writer.update_sonata(df)
 
 
