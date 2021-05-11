@@ -15,9 +15,9 @@ from bluepy.v2.enums import Cell, Synapse
 
 
 # parameters to use for machine learning (the rest is either correlated with these, or not important)
-usecols = ["syn_id", "gmax_p_AMPA", "gmax_NMDA", "volume_CR", "loc", "theta_d", "theta_p"]
-dtypes = {col: np.float32 if col != "syn_id" else np.int64 for col in usecols}
-dtypes["loc"] = str
+USECOLS = ["syn_id", "gmax_p_AMPA", "gmax_NMDA", "volume_CR", "loc", "theta_d", "theta_p"]
+DTYPES = {"syn_id": np.int64, "gmax_p_AMPA": np.float32, "gmax_NMDA": np.float32, "volume_CR": np.float32,
+          "loc": str, "theta_d": np.float32, "theta_p": np.float32}
 
 
 def _load_csvs(gids, mtypes, sims_dir):
@@ -26,7 +26,7 @@ def _load_csvs(gids, mtypes, sims_dir):
     for gid, mtype in tqdm(zip(gids, mtypes), total=len(gids),
                            desc="Loading saved results", miniters=len(gids) / 100):
         f_name = os.path.join(sims_dir, "out", "%i.csv" % gid)
-        df = pd.read_csv(f_name, usecols=usecols, index_col=0, dtype=dtypes)
+        df = pd.read_csv(f_name, usecols=USECOLS, index_col=0, dtype=DTYPES)
         df["post_mtype"] = mtype
         dfs.append(df)
     return pd.concat(dfs)
@@ -37,10 +37,12 @@ def _load_extra_csvs(gids, sims_dir):
     dfs = []
     for gid in tqdm(gids, desc="Loading saved results", miniters=len(gids) / 100):
         f_name = os.path.join(sims_dir, "out_mld", "%i.csv" % gid)
-        dfs.append(pd.read_csv(f_name, index_col=0, dtype=np.float32))
-    df = pd.concat(dfs)
-    df.index.name = "syn_id"
-    return df
+        # index col is not named syn_id in the saved csvs which makes loading a bit less efficient
+        # TODO: if this is ever rerun call the index syn_id and save it to binary file (e.g. pickle)
+        df = pd.read_csv(f_name, index_col=0)
+        df.index.name = "syn_id"
+        dfs.append(df.astype(np.float32))  # when putting dtype into the reader it messes up the idx ...
+    return pd.concat(dfs)
 
 
 class MLDataGenerator(object):
@@ -115,10 +117,9 @@ class MLDataGenerator(object):
         df["c_post"] = np.select(cond, c_posts)
         # read additional features (distance and impedance) and merge with the rest
         df_ml = _load_extra_csvs(gids, self.sims_dir)
-        df.join(df_ml)
-        print(len(df) / 1e6)
-        df.to_pickle(self.out_fname)
-        print("Dataset of %.2f million samples saved to: %s" % (len(df)/1e6, self.out_fname))
+        data = df.join(df_ml)
+        data.to_pickle(self.out_fname)
+        print("Dataset of %.2f million samples saved to: %s" % (len(data)/1e6, self.out_fname))
 
 
 if __name__ == "__main__":
