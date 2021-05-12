@@ -145,6 +145,26 @@ class SimWriter(object):
             if verbose:
                 print("Generated relaunch_failed.sh master launch script with %i jobs" % len(f_names))
 
+    def check_failed_thresholds(self):
+        """Check log files and returns statistics about failed threshold calibrations"""
+        c = Circuit(os.path.join(self.sims_dir, "BlueConfig"))
+        gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
+        mtypes = c.cells.get(gids, Cell.MTYPE).to_numpy()
+        not_defined_ths = {}
+        for gid, mtype in tqdm(zip(gids, mtypes), total=len(gids),
+                               desc="Checking log files", miniters=len(gids) / 100):
+            f_name = os.path.join(self.sims_dir, "sbatch", "sim_%i.log" % gid)
+            with open(f_name, "r") as f:
+                if "setting negative thresholds" in f.readlines()[-3]:
+                    if mtype in not_defined_ths:
+                        not_defined_ths[mtype] += 1
+                    else:
+                        not_defined_ths[mtype] = 1
+        unique_mtypes, counts = np.unique(mtypes, return_counts=True)
+        for mtype, count in not_defined_ths.items():
+            n = counts[unique_mtypes == mtype][0]
+            print("For %s: %i gids (%.2f%% of total) couldn't be calibrated" % (mtype, count, (count/n)*100))
+
 
 if __name__ == "__main__":
 
@@ -152,4 +172,5 @@ if __name__ == "__main__":
     writer = SimWriter(config)
     # writer.write_sim_files()
     # writer.write_mld_files()
-    writer.relaunch_failed_jobs("slurmstepd:", True)
+    # writer.relaunch_failed_jobs("slurmstepd:", True)
+    writer.check_failed_thresholds()
