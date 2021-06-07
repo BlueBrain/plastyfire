@@ -99,7 +99,7 @@ class ThresholdFinder(object):
         """Finds c_pre and c_post (see `plastyfire.simulator`) for all afferents of `post_gid`,
         calculates thresholds used in GluSynapse, stores them in a MultiIndex DataFrame, and saves them to csv."""
         from plastyfire.epg import ParamsGenerator
-        from plastyfire.simulator import inp_imp_finder, spike_threshold_finder, c_pre_finder, c_post_finder
+        from plastyfire.simulator import spike_threshold_finder, c_pre_finder, c_post_finder
 
         # get afferent gids (of `post_gid` within the given target)
         c = Circuit(self.bc)
@@ -112,8 +112,8 @@ class ThresholdFinder(object):
         # first test if gid can be stimulated to elicit a single spike
         L.info("Finding stimulus for gid %i (%s)" % (post_gid, c.cells.get(post_gid, Cell.MTYPE)))
         t1 = time.time()
-        for pulse_width in [1.5, 3]:
-            simres = spike_threshold_finder(self.bc, post_gid, 1, 0.1, pulse_width, 1000., 0.05, 5., 100, True)
+        for pulse_width in [1.5, 3, 5]:
+            simres = spike_threshold_finder(self.bc, post_gid, 1, 0.1, pulse_width, 1000., 0.05, 5., 100, False)
             if simres is not None:
                 break
         # if gid can be stimulated to elicit a single spike find c_pre and c_post and calc. thersholds
@@ -124,8 +124,8 @@ class ThresholdFinder(object):
             for i, pre_gid in enumerate(pre_gids):
                 L.info("Finding c_pre and c_post for %i -> %i (%i/%i)" % (pre_gid, post_gid, i+1, len(pre_gids)))
                 conn_params = pgen.generate_params(pre_gid, post_gid)
-                c_pre = c_pre_finder(self.bc, self.fit_params, conn_params, pre_gid, post_gid, True)
-                c_post = c_post_finder(self.bc, self.fit_params, conn_params, pre_gid, post_gid, stimulus, True)
+                c_pre = c_pre_finder(self.bc, self.fit_params, conn_params, pre_gid, post_gid, False)
+                c_post = c_post_finder(self.bc, self.fit_params, conn_params, pre_gid, post_gid, stimulus, False)
                 if c_post is not None:
                     for syn_id, syn_params in conn_params.items():
                         if syn_params["loc"] == "basal":
