@@ -148,7 +148,7 @@ class SimWriter(object):
     def check_failed_thresholds(self):
         """Check log files and returns statistics about failed threshold calibrations"""
         c = Circuit(os.path.join(self.sims_dir, "BlueConfig"))
-        gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
+        gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC", Cell.LAYER: 6})
         mtypes = c.cells.get(gids, Cell.MTYPE).to_numpy()
         not_defined_ths = {}
         for gid, mtype in tqdm(zip(gids, mtypes), total=len(gids),
