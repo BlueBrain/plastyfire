@@ -51,15 +51,14 @@ class ImpedanceFinder(object):
         c = Circuit(self.bc)
         gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
         pre_gids = np.intersect1d(c.connectome.afferent_gids(post_gid), gids).astype(np.int)
-        syn_locs = c.connectome.pathway_synapses(pre_gids, post_gid, [Synapse.POST_SECTION_ID, "afferent_section_pos",
-                                                                      Synapse.POST_NEURITE_DISTANCE])
-        syn_locs = syn_locs.rename(columns={Synapse.POST_SECTION_ID: "sec_id", "afferent_section_pos": "pos",
-                                            Synapse.POST_NEURITE_DISTANCE: "dist"})
+        syn_locs = c.connectome.pathway_synapses(pre_gids, post_gid, [Synapse.POST_SECTION_ID, "afferent_section_pos"])
+        syn_locs = syn_locs.rename(columns={Synapse.POST_SECTION_ID: "sec_id", "afferent_section_pos": "pos"})
         L.info("Calculating impedance for %i synapses of gid %i (%s)" % (len(syn_locs), post_gid,
                                                                          c.cells.get(post_gid, Cell.MTYPE)))
         inp_imps = imp_finder(self.bc, post_gid, syn_locs, FREQS, True)
+        inp_imps.index.name = "syn_id"
         L.info("Saving results to out_mld/%i.csv" % post_gid)
-        inp_imps.to_csv(os.path.join(self.sims_dir, "out_mld", "%i.csv" % post_gid))
+        inp_imps.astype(np.float32).to_pickle(os.path.join(self.sims_dir, "out_mld", "%i.pkl" % post_gid))
 
 
 if __name__ == "__main__":
