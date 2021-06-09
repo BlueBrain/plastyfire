@@ -23,7 +23,10 @@ from bluepyparallel import evaluate
 
 pd.set_option("display.max_colwidth", 10000)  # solve truncated strings: see https://github.com/pandas-dev/pandas/issues/9784
 warnings.filterwarnings("ignore", category=UserWarning)  # to disable ascii morph warning ...
-out_dir = "/gpfs/bbp.cscs.ch/project/proj96/scratch/home/ecker/plastyfire/out_mld"
+
+# enums for ndarray columns and dendrite types
+POST_GID, SEC_ID, LOC, DIST, BR_ORD, DIAM = 0, 1, 2, 3, 4, 5
+BASAL, OBLIQUE, TUFT, TRUNK, APICAL = 0, 1, 2, 3, 4
 
 
 def _isin_fast(whom, where, in_parallel=False):
@@ -74,49 +77,50 @@ def compute_apical(df):
 def get_morph_features(neuron, apical_section_id):
     """Further classifies apical dendrites to: trunk, tuft and oblique dendrites
     adds path distance and branch order and calculates mean section diameter"""
-    neurite_features = {"type": {}, "dist": {}, "br_ord": {}, "diam": {}}
+    neurite_features = {LOC: {}, DIST: {}, BR_ORD: {}, DIAM: {}}
     path_distances = nm.get("section_path_distances", neuron)
     branch_orders = nm.get("section_branch_orders", neuron)
     # basal dendrites are straightforward in NeuroM
     for section in nm.iter_sections(neuron):
         if section.type == nm.NeuriteType.basal_dendrite:
-            neurite_features["type"][section.id] = "basal"
-            neurite_features["dist"][section.id] = path_distances[section.id-1]
-            neurite_features["br_ord"][section.id] = branch_orders[section.id-1]
-            neurite_features["diam"][section.id] = np.mean(section.points[:, 3])
+            neurite_features[LOC][section.id] = BASAL
+            neurite_features[DIST][section.id] = path_distances[section.id-1]
+            neurite_features[BR_ORD][section.id] = branch_orders[section.id-1]
+            neurite_features[DIAM][section.id] = np.mean(section.points[:, 3])
     if apical_section_id is not None:
         apical_section = neuron.sections[apical_section_id]
         # in the beginning initialize all apicals as oblique dendrites (tuft and trunk will be overwritten...)
         for section in nm.iter_sections(neuron):
             if section.type == nm.NeuriteType.apical_dendrite:
-                neurite_features["type"][section.id] = "oblique"
-                neurite_features["dist"][section.id] = path_distances[section.id-1]
-                neurite_features["br_ord"][section.id] = branch_orders[section.id-1]
-                neurite_features["diam"][section.id] = np.mean(section.points[:, 3])
+                neurite_features[LOC][section.id] = OBLIQUE
+                neurite_features[DIST][section.id] = path_distances[section.id-1]
+                neurite_features[BR_ORD][section.id] = branch_orders[section.id-1]
+                neurite_features[DIAM][section.id] = np.mean(section.points[:, 3])
         # above apical point: tuft dendrites
         for section in apical_section.ipreorder():
-            neurite_features["type"][section.id] = "tuft"
+            neurite_features[LOC][section.id] = TUFT
         # upstream of apical point: trunk
         for section in apical_section.iupstream():
-            neurite_features["type"][section.id] = "trunk"
+            neurite_features[LOC][section.id] = TRUNK
     else:  # if apicals cannot be further divided still return something meaningfull
         for section in nm.iter_sections(neuron):
             if section.type == nm.NeuriteType.apical_dendrite:
-                neurite_features["type"][section.id] = "apical"
-                neurite_features["dist"][section.id] = path_distances[section.id-1]
-                neurite_features["br_ord"][section.id] = branch_orders[section.id-1]
-                neurite_features["diam"][section.id] = np.mean(section.points[:, 3])
+                neurite_features[LOC][section.id] = APICAL
+                neurite_features[DIST][section.id] = path_distances[section.id-1]
+                neurite_features[BR_ORD][section.id] = branch_orders[section.id-1]
+                neurite_features[DIAM][section.id] = np.mean(section.points[:, 3])
     return neurite_features
 
 
-def add_morph_features(syn_locs, post_gid, neurite_features):
+def add_morph_features(morph_features, post_gid, neurite_features):
     """Adds fine-grained apical dendrite names and dendritic diam (of the whole section) to synapse df"""
-    for sec_id in syn_locs.loc[syn_locs["post_gid"] == post_gid, "sec_id"].unique():
-        idx = syn_locs.loc[(syn_locs["post_gid"] == post_gid) & (syn_locs["sec_id"] == sec_id)].index
-        syn_locs.loc[idx, "loc"] = neurite_features["type"][sec_id]
-        syn_locs.loc[idx, "dist"] = neurite_features["dist"][sec_id]
-        syn_locs.loc[idx, "br_ord"] = neurite_features["br_ord"][sec_id]
-        syn_locs.loc[idx, "diam"] = neurite_features["diam"][sec_id]
+    post_gid_idx = np.where(morph_features[:, POST_GID] == post_gid)[0]
+    for sec_id in np.unique(morph_features[post_gid_idx, SEC_ID]):
+        row_idx = post_gid_idx[np.where(morph_features[post_gid_idx, SEC_ID] == sec_id)[0]]
+        morph_features[row_idx, LOC] = neurite_features[LOC][sec_id]
+        morph_features[row_idx, DIST] = neurite_features[DIST][sec_id]
+        morph_features[row_idx, BR_ORD] = neurite_features[BR_ORD][sec_id]
+        morph_features[row_idx, DIAM] = neurite_features[DIAM][sec_id]
 
 
 class MorphFeatures(object):
@@ -149,30 +153,40 @@ class MorphFeatures(object):
         return os.path.join(self.sims_dir, "out_mld", "extra_morph_features.pkl")
 
     def run(self):
+        """main function that gets the extra morph features (first as an ndarray then saves it as a nice DataFrame)"""
         c = Circuit(self.bc)
         gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
         # pre-build lookups for morphologies
         morph_df = c.cells.get(gids, properties=["morphology"])
         apical_df = compute_apical(_get_morph_paths(morph_df, c.config["morphologies"]))
         # pre-calculate all synapse IDs
-        syn_ids = get_edge_ids_fast(c.config["connectome"], gids-1, gids-1, None, True)
-        # get section IDs and prepare df structure
-        syn_locs = c.connectome.synapse_properties(syn_ids, [Synapse.POST_GID, Synapse.POST_SECTION_ID])
-        syn_locs = syn_locs.rename(columns={Synapse.POST_GID: "post_gid", Synapse.POST_SECTION_ID: "sec_id"})
-        syn_locs = syn_locs.assign(loc="", dist=0.0, br_ord=0.0, diam=0.0)
-        syn_locs = syn_locs.astype({"dist": np.float32, "br_ord": np.int64, "diam": np.float32})  # stupid pandas...
+        syn_idx = get_edge_ids_fast(c.config["connectome"], gids-1, gids-1, None, True)
+        # get section IDs and prepare data structure
+        syn_locs = c.connectome.synapse_properties(syn_idx, [Synapse.POST_GID, Synapse.POST_SECTION_ID])
+        morph_features = np.zeros((len(syn_idx), 6), dtype=np.float32)
+        morph_features[:, POST_GID:LOC] = syn_locs.to_numpy()
+        neurite_features = {}
         for post_gid in tqdm(gids, desc="Getting morphology features", miniters=len(gids) / 100):
             morph_name = morph_df.loc[post_gid, "morphology"]
-            morph = nm.load_neuron(apical_df.loc[apical_df["morphology"] == morph_name, "path"].to_string(index=False))
-            try:
-                apical_point = int(apical_df.loc[apical_df["morphology"] == morph_name, "apical_point"])
-            except:
-                apical_point = None
-            neurite_features = get_morph_features(morph, apical_point)
-            add_morph_features(syn_locs, post_gid, neurite_features)
-        # drop helper stuff from the df that won't be used
-        syn_locs = syn_locs.drop(["post_gid", "sec_id"], axis=1)
-        syn_locs.to_pickle(self.out_fname)
+            if morph_name not in neurite_features:
+                morph = nm.load_neuron(apical_df.loc[apical_df["morphology"] == morph_name,
+                                                     "path"].to_string(index=False))
+                try:
+                    apical_point = int(apical_df.loc[apical_df["morphology"] == morph_name, "apical_point"])
+                except:
+                    apical_point = None
+                nf = get_morph_features(morph, apical_point)
+                neurite_features[morph_name] = nf
+            else:
+                nf = neurite_features[morph_name]
+            add_morph_features(morph_features, post_gid, nf)
+        # convert ndarray to pandas DataFrame and save it
+        df = pd.DataFrame(data=morph_features[:, LOC:], index=syn_idx, columns=["loc", "dist", "br_ord", "diam"])
+        df.replace({"loc": {BASAL: "basal", OBLIQUE: "oblique", TUFT: "tuft",
+                            TRUNK: "trunk", APICAL:"apical"}}, inplace=True)
+        df = df.astype({"dist": np.float32, "br_ord": np.uint8, "diam": np.float32})
+        df.index.name = "syn_id"
+        df.to_pickle(self.out_fname)
 
 
 if __name__ == "__main__":
