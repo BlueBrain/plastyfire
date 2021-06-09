@@ -55,7 +55,7 @@ Run single sim for testing purpose
   source setupenv.sh  # it has hardcoded virtualenv and x86_64 path, which you might want to change
   python thresholdfinder.py {config_path} {post_gid}
 
-To speed things up one can launch these in batches of 5000 on BBP, using the generated launchscripts.
+To speed things up one can launch these in batches of 5000 on BB5, using the generated launchscripts.
 
 
 Merge results and output new connectome in SONATA format
@@ -71,10 +71,11 @@ Get additional features and train XGBoost model to predict parameters
 
 .. code-block::
 
-  python impedancefinder.py {config_path} {post_gid}  # gets extra features
+  python impedancefinder.py {config_path} {post_gid}  # gets extra impedance features
+  python emf.py  # gets extra morphological features
   python mldg.py  # concatenates results and generates dataset used for ML
   python xgb.py  # train XGBoost model
 
 
-As for thresholdfinder one can launch impedancefinder in batches of 5000 on BBP, using the generated launchscripts.
+As for `thresholdfinder` one can launch `impedancefinder` in batches of 5000 on BB5, using the generated launchscripts.
 (This would be more elegant with ipycluster as these calculations don't take a long time...)
