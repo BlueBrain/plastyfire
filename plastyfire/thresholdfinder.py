@@ -118,7 +118,8 @@ class ThresholdFinder(object):
                 break
         # if gid can be stimulated to elicit a single spike find c_pre and c_post and calc. thersholds
         if simres is not None:
-            stimulus = {"nspikes": 1, "freq": 0.1, "width": simres["width"], "offset": 1000., "amp": simres["amp"]}
+            stimulus = {"nspikes": 1, "freq": 0.1, "width": simres["width"],
+                        "offset": simres["offset"], "amp": simres["amp"]}
             L.info("%.2f nA (%.1f s long) stimulus found in %s" % (stimulus["amp"], stimulus["width"],
                    time.strftime("%M:%S", time.gmtime(time.time() - t1))))
             for i, pre_gid in enumerate(pre_gids):

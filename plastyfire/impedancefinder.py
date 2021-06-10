@@ -7,7 +7,6 @@ last modified: András Ecker 05.2021
 import os
 import time
 import yaml
-import warnings
 import logging
 import argparse
 import numpy as np
@@ -17,7 +16,6 @@ from bluepy.v2.enums import Cell, Synapse
 logging.basicConfig(level=logging.INFO)
 L = logging.getLogger("impedancefinder")
 
-warnings.filterwarnings("ignore", category=UserWarning)  # to disable ascii morph warning ...
 FREQS = [1, 5, 10, 20, 50, 100, 200, 1000]
 
 
