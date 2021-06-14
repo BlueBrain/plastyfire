@@ -138,7 +138,7 @@ class SonataWriter(object):
             edge_properties = {extra_param: np.full((size,), fill_value=fill_value, dtype=DTYPES[extra_param])}
             update_population_properties(self.out_sonata_fname, edge_properties, force=True)
 
-    def merge_csvs(self, save=True):
+    def merge_csvs(self, save=False):
         """Loads in saved results from all sims and after some preprocessing
         concatenates them to a big DataFrame to be used in the sonata edge file"""
         c = Circuit(self.bc)
