@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Machine learning data generator
-last modified: András Ecker 05.2021
+Machine Learning Data Generator
+last modified: András Ecker 06.2021
 """
 
 import os
@@ -32,17 +32,16 @@ def _load_csvs(gids, mtypes, sims_dir):
     return pd.concat(dfs)
 
 
-def _load_extra_csvs(gids, sims_dir):
-    """Loads in saved results from all impedance calculations (used as extra features)"""
+def _load_extra_pkls(gids, sims_dir):
+    """Loads in saved results from all impedance calculations (one per gid)
+    as well as morphology features (saved as 1 big DataFrame) and merge them"""
     dfs = []
     for gid in tqdm(gids, desc="Loading saved results", miniters=len(gids) / 100):
-        f_name = os.path.join(sims_dir, "out_mld", "%i.csv" % gid)
-        # index col is not named syn_id in the saved csvs which makes loading a bit less efficient
-        # TODO: if this is ever rerun call the index syn_id and save it to binary file (e.g. pickle)
-        df = pd.read_csv(f_name, index_col=0)
-        df.index.name = "syn_id"
-        dfs.append(df.astype(np.float32))  # when putting dtype into the reader it messes up the idx ...
-    return pd.concat(dfs)
+        f_name = os.path.join(sims_dir, "out_mld", "%i.pkl" % gid)
+        dfs.append(pd.read_pickle(f_name))
+    df_if = pd.concat(dfs)  # all impedance related features
+    df_mf = pd.read_pickle(os.path.join(sims_dir, "out_mld", "extra_morph_features.pkl"))
+    return df_mf.join(df_if)
 
 
 class MLDataGenerator(object):
@@ -115,9 +114,11 @@ class MLDataGenerator(object):
                    (self.inv_params["a10"] * df["theta_d"] + self.inv_params["a11"] * df["theta_p"])]
         df["c_pre"] = np.select(cond, c_pres)
         df["c_post"] = np.select(cond, c_posts)
-        # read additional features (distance and impedance) and merge with the rest
-        df_ml = _load_extra_csvs(gids, self.sims_dir)
-        data = df.join(df_ml)
+        # loc will be overwritten by better classified extra morph. features, so drop it after c_pre/post calc.
+        df.drop("loc", axis=1, inplace=True)
+        # read additional features (impedance and morph related features) and merge with the rest
+        df_ef = _load_extra_pkls(gids, self.sims_dir)
+        data = df.join(df_ef)
         data.to_pickle(self.out_fname)
         print("Dataset of %.2f million samples saved to: %s" % (len(data)/1e6, self.out_fname))
 
