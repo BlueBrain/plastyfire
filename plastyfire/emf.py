@@ -7,7 +7,6 @@ authors: András Ecker, Alexis Arnaudon, Sirio Bolaños-Puchet; last modified: 0
 """
 
 import os
-import time
 import yaml
 from tqdm import tqdm
 import warnings
@@ -183,7 +182,7 @@ class MorphFeatures(object):
         # convert ndarray to pandas DataFrame and save it
         df = pd.DataFrame(data=morph_features[:, LOC:], index=syn_idx, columns=["loc", "dist", "br_ord", "diam"])
         df.replace({"loc": {BASAL: "basal", OBLIQUE: "oblique", TUFT: "tuft",
-                            TRUNK: "trunk", APICAL:"apical"}}, inplace=True)
+                            TRUNK: "trunk", APICAL: "apical"}}, inplace=True)
         df = df.astype({"dist": np.float32, "br_ord": np.uint8, "diam": np.float32})
         df.index.name = "syn_id"
         df.to_pickle(self.out_fname)
@@ -192,6 +191,4 @@ class MorphFeatures(object):
 if __name__ == "__main__":
 
     mf = MorphFeatures("../configs/hexO1_v7.yaml")
-    start_time = time.time()
     mf.run()
-    print("Elapsed time: %s" % time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
