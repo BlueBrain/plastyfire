@@ -27,6 +27,7 @@ USECOLS = ["syn_id", "Use0_TM", "Dep_TM", "Fac_TM", "Nrrp_TM", "gmax0_AMPA", "vo
            "Use_d_TM", "Use_p_TM", "gmax_d_AMPA", "gmax_p_AMPA", "gmax_NMDA", "theta_d", "theta_p"]
 DTYPES = {col: np.float32 if col not in ["syn_id", "Nrrp_TM", "rho0_GB"] else np.int64 for col in USECOLS}
 NOT_DEFINED_TH = -1
+VIRTUAL_FIBERS_FNAME = "virtual-fibers.csv"  # used for flatmapping projections later...
 
 
 def _get_population(h5f_name):
@@ -125,8 +126,16 @@ class SonataWriter(object):
         return Circuit(self.circuit_path).config["projections"]["Thalamocortical_input_VPM"]
 
     @cached_property
+    def inp_vpm_vfiber_fname(self):
+        return os.path.join(os.path.split(self.inp_vpm_sonata_fname)[0], VIRTUAL_FIBERS_FNAME)
+
+    @cached_property
     def inp_pom_sonata_fname(self):
         return Circuit(self.circuit_path).config["projections"]["Thalamocortical_input_POM"]
+
+    @cached_property
+    def inp_pom_vfiber_fname(self):
+        return os.path.join(os.path.split(self.inp_pom_sonata_fname)[0], VIRTUAL_FIBERS_FNAME)
 
     @property
     def out_pkl_fname(self):
@@ -141,8 +150,16 @@ class SonataWriter(object):
         return os.path.join(self.out_dir, "projections", "VPM", "edges.sonata")
 
     @property
+    def out_vpm_vfiber_fname(self):
+        return os.path.join(self.out_dir, "projections", "VPM", VIRTUAL_FIBERS_FNAME)
+
+    @property
     def out_pom_sonata_fname(self):
         return os.path.join(self.out_dir, "projections", "POm", "edges.sonata")
+
+    @property
+    def out_pom_vfiber_fname(self):
+        return os.path.join(self.out_dir, "projections", "POm", VIRTUAL_FIBERS_FNAME)
 
     def init_sonata(self):
         """Copies base circuit's sonata connectome and adds extra fields"""
@@ -163,6 +180,7 @@ class SonataWriter(object):
                 fill_value = 0 if extra_param not in ["theta_d", "theta_p"] else NOT_DEFINED_TH
                 edge_properties[extra_param] = np.full((size,), fill_value=fill_value, dtype=DTYPES[extra_param])
             update_population_properties(self.out_vpm_sonata_fname, edge_properties, force=True)
+            shutil.copyfile(self.inp_vpm_vfiber_fname, self.out_vpm_vfiber_fname)
 
             shutil.copyfile(self.inp_pom_sonata_fname, self.out_pom_sonata_fname)
             size = population_size(self.out_pom_sonata_fname)
@@ -171,6 +189,7 @@ class SonataWriter(object):
                 fill_value = 0 if extra_param not in ["theta_d", "theta_p"] else NOT_DEFINED_TH
                 edge_properties[extra_param] = np.full((size,), fill_value=fill_value, dtype=DTYPES[extra_param])
             update_population_properties(self.out_pom_sonata_fname, edge_properties, force=True)
+            shutil.copyfile(self.inp_pom_vfiber_fname, self.out_pom_vfiber_fname)
 
     def merge_csvs(self, save=False):
         """Loads in saved results from all sims and after some preprocessing
