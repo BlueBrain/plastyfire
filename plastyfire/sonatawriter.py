@@ -138,15 +138,14 @@ class SonataWriter(object):
 
     @property
     def out_vpm_sonata_fname(self):
-        return os.path.join(self.out_dir, "vpm_edges.sonata")
+        return os.path.join(self.out_dir, "projections", "VPM", "edges.sonata")
 
     @property
     def out_pom_sonata_fname(self):
-        return os.path.join(self.out_dir, "pom_edges.sonata")
+        return os.path.join(self.out_dir, "projections", "POm", "edges.sonata")
 
     def init_sonata(self):
         """Copies base circuit's sonata connectome and adds extra fields"""
-        '''
         shutil.copyfile(self.inp_sonata_fname, self.out_sonata_fname)
         size = population_size(self.out_sonata_fname)
         # add extra params one-by-one (otherwise there won't be enough memory)
@@ -154,7 +153,7 @@ class SonataWriter(object):
             fill_value = 0 if extra_param not in ["theta_d", "theta_p"] else NOT_DEFINED_TH
             edge_properties = {extra_param: np.full((size,), fill_value=fill_value, dtype=DTYPES[extra_param])}
             update_population_properties(self.out_sonata_fname, edge_properties, force=True)
-        '''
+
         # do the same for projections (if there are any)
         if self.circuit_path[-3:] == "_TC":  # this is a bit hacky...
             shutil.copyfile(self.inp_vpm_sonata_fname, self.out_vpm_sonata_fname)
@@ -172,7 +171,6 @@ class SonataWriter(object):
                 fill_value = 0 if extra_param not in ["theta_d", "theta_p"] else NOT_DEFINED_TH
                 edge_properties[extra_param] = np.full((size,), fill_value=fill_value, dtype=DTYPES[extra_param])
             update_population_properties(self.out_pom_sonata_fname, edge_properties, force=True)
-
 
     def merge_csvs(self, save=False):
         """Loads in saved results from all sims and after some preprocessing
@@ -220,6 +218,6 @@ if __name__ == "__main__":
     writer = SonataWriter("../configs/hexO1_v7.yaml")
     writer.init_sonata()
     #df = writer.merge_csvs()
-    #writer.update_sonata(df)
+    writer.update_sonata(df)
 
 
