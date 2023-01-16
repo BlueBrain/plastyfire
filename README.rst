@@ -66,16 +66,10 @@ Merge results and output new connectome in SONATA format
   python sonatawriter.py
 
 
-Get additional features and train XGBoost model to predict parameters
+Train XGBoost model to predict parameters
 -----------------------------------------------
 
 .. code-block::
 
-  python impedancefinder.py {config_path} {post_gid}  # gets extra impedance features
-  python emf.py  # gets extra morphological features
-  python mldg.py  # concatenates results and generates dataset used for ML
+  python mldg.py  # similar to `sonatawriter.py`, but concatenates fewer features from the saved csv files
   python xgb.py  # train XGBoost model
-
-
-As for `thresholdfinder` one can launch `impedancefinder` in batches of 5000 on BB5, using the generated launchscripts.
-(This would be more elegant with ipycluster as these calculations don't take a long time...)
