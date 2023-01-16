@@ -38,6 +38,11 @@ EXC-EXC pathway-specific recipe (xml->DataFrame)
   python glusynapserecipe.py
 
 
+2 years later, we have a proper package, which can be pip installed (see FUNCZ-183 on Jira):
+`pip install --index-url https://bbpteam.epfl.ch/repository/devpi/bbprelman/dev/+simple/ fz-td-recipe`
+but as it requires python 3.9, it's not part of the current `venv`
+
+
 Launch single cell sims to get C_pre and C_post
 -----------------------------------------------
 
