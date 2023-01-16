@@ -1,17 +1,17 @@
-# -*- coding: utf-8 -*-
 """
 Writes sbatch scripts for every gid (given a circuit and a target in the config file)
 last modified: András Ecker 05.2021
 """
 
 import os
-import yaml
 import pathlib
 import shutil
 from tqdm import tqdm
 import numpy as np
 from bluepy.v2 import Circuit
 from bluepy.v2.enums import Cell
+
+from plastyfire.config import Config
 
 
 CPU_TIME = 1.5  # heuristics: c_pre and c_post for a single connection takes ca. 1.3 minutes to simulate/calculate
@@ -28,34 +28,8 @@ def get_cpu_time(n_afferents):
     return cpu_time_str, qos
 
 
-class SimWriter(object):
+class SimWriter(Config):
     """Small class to setup single cell simulations"""
-
-    def __init__(self, config_path):
-        """YAML config file based constructor"""
-        self.config_path = config_path
-        with open(config_path, "r") as f:
-            self._config = yaml.load(f, Loader=yaml.SafeLoader)
-
-    @property
-    def config(self):
-        return self._config
-
-    @property
-    def circuit_path(self):
-        return self.config["circuit"]["path"]
-
-    @property
-    def user_target(self):
-        return self.config["circuit"]["user.target"]
-
-    @property
-    def target(self):
-        return self.config["circuit"]["target"]
-
-    @property
-    def sims_dir(self):
-        return self.config["sims_dir"]
 
     def write_batch_sript(self, f_name, templ, gid, cpu_time, qos):
         """Writes single cell batch script"""
@@ -90,31 +64,6 @@ class SimWriter(object):
             n_afferents = len(np.intersect1d(c.connectome.afferent_gids(gid), gids))
             cpu_time, qos = get_cpu_time(n_afferents)
             self.write_batch_sript(f_name, templ, gid, cpu_time, qos)
-        # write master launch scripts in batches of 5k
-        idx = np.arange(0, len(f_names), 5000)
-        idx = np.append(idx, len(f_names))
-        for i, (start, end) in enumerate(zip(idx[:-1], idx[1:])):
-            with open(os.path.join(sbatch_dir, "launch_batch%i.sh" % i), "w") as f:
-                for f_name in f_names[start:end]:
-                    f.write("sbatch %s\n" % f_name)
-
-    def write_mld_files(self):
-        """Writes extra batch scripts for calculating features used for ML (distance and impedance)"""
-        # create folders for batch scripts and output csv files
-        sbatch_dir = os.path.join(self.sims_dir, "sbatch_mld")
-        pathlib.Path(sbatch_dir).mkdir(exist_ok=True)
-        pathlib.Path(os.path.join(self.sims_dir, "out_mld")).mkdir(exist_ok=True)
-        # get all EXC gids and write sbatch scripts for all of them
-        bc = os.path.join(self.sims_dir, "BlueConfig")  # should be written by `write_sim_files()`
-        c = Circuit(bc)
-        gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
-        with open("templates/mld.batch.tmpl", "r") as f:
-            templ = f.read()
-        f_names = []
-        for gid in tqdm(gids, desc="Writing batch scripts for every EXC gid", miniters=len(gids)/100):
-            f_name = os.path.join(sbatch_dir, "mld_%i.batch" % gid)
-            f_names.append(f_name)
-            self.write_batch_sript(f_name, templ, gid, cpu_time="00:05:00", qos="")
         # write master launch scripts in batches of 5k
         idx = np.arange(0, len(f_names), 5000)
         idx = np.append(idx, len(f_names))
@@ -167,10 +116,9 @@ class SimWriter(object):
 
 
 if __name__ == "__main__":
-
-    config = "/gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/configs/hexO1_v7.yaml"
-    writer = SimWriter(config)
+    config_path = "/gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/configs/hexO1_v7.yaml"
+    writer = SimWriter(config_path)
     # writer.write_sim_files()
-    # writer.write_mld_files()
     # writer.relaunch_failed_jobs("slurmstepd:", True)
     writer.check_failed_thresholds()
+

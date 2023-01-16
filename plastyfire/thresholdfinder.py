@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Runscript for single cell simulations that find the depression and potentiation thresholds used in GluSynapse
 last modified: András Ecker 04.2021
@@ -7,13 +6,14 @@ last modified: András Ecker 04.2021
 import os
 import gc
 import time
-import yaml
 import argparse
 import logging
 import numpy as np
 import pandas as pd
 from bluepy.v2 import Circuit
 from bluepy.v2.enums import Cell
+
+from plastyfire.config import Config
 
 
 logging.basicConfig(level=logging.INFO)
@@ -62,38 +62,8 @@ def store_params(df, conn_params):
             df.loc[df_id, param] = val
 
 
-class ThresholdFinder(object):
+class ThresholdFinder(Config):
     """Class (to store info about and) to run single cell simulations in BGLibPy"""
-
-    def __init__(self, config_path):
-        """YAML config file based constructor"""
-        self._config_path = config_path
-        with open(config_path, "r") as f:
-            self._config = yaml.load(f, Loader=yaml.SafeLoader)
-
-    @property
-    def config(self):
-        return self._config
-
-    @property
-    def target(self):
-        return self.config["circuit"]["target"]
-
-    @property
-    def extra_recipe_path(self):
-        return self.config["extra_recipe_path"]
-
-    @property
-    def sims_dir(self):
-        return self.config["sims_dir"]
-
-    @property
-    def fit_params(self):
-        return self.config["fit_params"]
-
-    @property
-    def bc(self):
-        return os.path.join(self.sims_dir, "BlueConfig")
 
     def run(self, post_gid):
         """Finds c_pre and c_post (see `plastyfire.simulator`) for all afferents of `post_gid`,
@@ -102,7 +72,7 @@ class ThresholdFinder(object):
         from plastyfire.simulator import spike_threshold_finder, c_pre_finder, c_post_finder
 
         # get afferent gids (of `post_gid` within the given target)
-        c = Circuit(self.bc)
+        c = Circuit(self.bc_path)
         gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
         pre_gids = np.intersect1d(c.connectome.afferent_gids(post_gid), gids).astype(np.int)
         # init DataFrame to store results
@@ -113,7 +83,7 @@ class ThresholdFinder(object):
         L.info("Finding stimulus for gid %i (%s)" % (post_gid, c.cells.get(post_gid, Cell.MTYPE)))
         t1 = time.time()
         for pulse_width in [1.5, 3, 5]:
-            simres = spike_threshold_finder(self.bc, post_gid, 1, 0.1, pulse_width, 1000., 0.05, 5., 100, False)
+            simres = spike_threshold_finder(self.bc_path, post_gid, 1, 0.1, pulse_width, 1000., 0.05, 5., 100, False)
             if simres is not None:
                 break
         # if gid can be stimulated to elicit a single spike find c_pre and c_post and calc. thersholds
@@ -125,8 +95,8 @@ class ThresholdFinder(object):
             for i, pre_gid in enumerate(pre_gids):
                 L.info("Finding c_pre and c_post for %i -> %i (%i/%i)" % (pre_gid, post_gid, i+1, len(pre_gids)))
                 conn_params = pgen.generate_params(pre_gid, post_gid)
-                c_pre = c_pre_finder(self.bc, self.fit_params, conn_params, pre_gid, post_gid, False)
-                c_post = c_post_finder(self.bc, self.fit_params, conn_params, pre_gid, post_gid, stimulus, False)
+                c_pre = c_pre_finder(self.bc_path, self.fit_params, conn_params, pre_gid, post_gid, False)
+                c_post = c_post_finder(self.bc_path, self.fit_params, conn_params, pre_gid, post_gid, stimulus, False)
                 if c_post is not None:
                     for syn_id, syn_params in conn_params.items():
                         if syn_params["loc"] == "basal":
@@ -154,7 +124,6 @@ class ThresholdFinder(object):
 
 
 if __name__ == "__main__":
-
     # Parse command line
     parser = argparse.ArgumentParser()
     parser.add_argument("config_path", type=str, help="path to YAML config file")

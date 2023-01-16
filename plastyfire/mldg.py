@@ -1,7 +1,6 @@
-# -*- coding: utf-8 -*-
 """
 Machine Learning Data Generator
-last modified: András Ecker 06.2021
+last modified: András Ecker 01.2023
 """
 
 import os
@@ -13,6 +12,7 @@ import pandas as pd
 from bluepy.v2 import Circuit
 from bluepy.v2.enums import Cell, Synapse
 
+from plastyfire.config import Config
 
 # parameters to use for machine learning (the rest is either correlated with these, or not important)
 USECOLS = ["syn_id", "gmax_p_AMPA", "gmax_NMDA", "volume_CR", "loc", "theta_d", "theta_p"]
@@ -32,50 +32,8 @@ def _load_csvs(gids, mtypes, sims_dir):
     return pd.concat(dfs)
 
 
-def _load_extra_pkls(gids, sims_dir):
-    """Loads in saved results from all impedance calculations (one per gid)
-    as well as morphology features (saved as 1 big DataFrame) and merge them"""
-    dfs = []
-    for gid in tqdm(gids, desc="Loading saved results", miniters=len(gids) / 100):
-        f_name = os.path.join(sims_dir, "out_mld", "%i.pkl" % gid)
-        dfs.append(pd.read_pickle(f_name))
-    df_if = pd.concat(dfs)  # all impedance related features
-    df_mf = pd.read_pickle(os.path.join(sims_dir, "out_mld", "extra_morph_features.pkl"))
-    return df_mf.join(df_if)
-
-
-class MLDataGenerator(object):
+class MLDataGenerator(Config):
     """Class to generate dataset for training ML algorithms to predict plasticity thresholds"""
-
-    def __init__(self, config_path):
-        """YAML config file based constructor"""
-        self._config_path = config_path
-        with open(config_path, "r") as f:
-            self._config = yaml.load(f, Loader=yaml.SafeLoader)
-
-    @property
-    def config(self):
-        return self._config
-
-    @property
-    def target(self):
-        return self.config["circuit"]["target"]
-
-    @property
-    def sims_dir(self):
-        return self.config["sims_dir"]
-
-    @property
-    def out_dir(self):
-        return self.config["out_dir"]
-
-    @property
-    def fit_params(self):
-        return self.config["fit_params"]
-
-    @property
-    def bc(self):
-        return os.path.join(self.sims_dir, "BlueConfig")
 
     @property
     def out_fname(self):
@@ -96,7 +54,7 @@ class MLDataGenerator(object):
     def merge_csvs(self):
         """Loads in saved results and after some preprocessing
         concatenates them to a big DataFrame to be used for machine learning"""
-        c = Circuit(self.bc)
+        c = Circuit(self.bc_path)
         gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
         mtypes = c.cells.get(gids, Cell.MTYPE).to_numpy()
         df = _load_csvs(gids, mtypes, self.sims_dir)
@@ -114,17 +72,11 @@ class MLDataGenerator(object):
                    (self.inv_params["a10"] * df["theta_d"] + self.inv_params["a11"] * df["theta_p"])]
         df["c_pre"] = np.select(cond, c_pres)
         df["c_post"] = np.select(cond, c_posts)
-        # loc will be overwritten by better classified extra morph. features, so drop it after c_pre/post calc.
-        df.drop("loc", axis=1, inplace=True)
-        # read additional features (impedance and morph related features) and merge with the rest
-        df_ef = _load_extra_pkls(gids, self.sims_dir)
-        data = df.join(df_ef)
-        data.to_pickle(self.out_fname)
-        print("Dataset of %.2f million samples saved to: %s" % (len(data)/1e6, self.out_fname))
+        df.to_pickle(self.out_fname)
+        print("Dataset of %.2f million samples saved to: %s" % (len(df)/1e6, self.out_fname))
 
 
 if __name__ == "__main__":
-
     gen = MLDataGenerator("../configs/hexO1_v7.yaml")
     gen.merge_csvs()
 
