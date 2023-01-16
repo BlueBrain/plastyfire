@@ -1,7 +1,7 @@
 """plastyfire"""
 
 from plastyfire.version import __version__
-from plastifire.config import Config
+from plastyfire.config import Config
 from plastyfire.bcwriter import BCWriter
 from plastyfire.epg import ParamsGenerator
 from plastyfire.synapse import Synapse
