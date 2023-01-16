@@ -4,7 +4,6 @@ last modified: András Ecker 01.2023
 """
 
 import os
-import yaml
 from tqdm import tqdm
 from cached_property import cached_property
 import numpy as np
@@ -77,7 +76,7 @@ class MLDataGenerator(Config):
 
 
 if __name__ == "__main__":
-    gen = MLDataGenerator("../configs/hexO1_v7.yaml")
+    gen = MLDataGenerator("/gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/configs/hexO1_v7.yaml")
     gen.merge_csvs()
 
 
