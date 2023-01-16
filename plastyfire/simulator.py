@@ -109,57 +109,6 @@ def spike_threshold_finder(bc, post_gid, nspikes, freq, width, offset, min_amp, 
     return None
 
 
-def _imp_finder_process(bc, post_gid, syn_locs, freqs, fixhp):
-    """
-    Multiprocessing subprocess for `imp_finder()`
-    Instantiates cell and uses NEURON's built in `Impedance` class to get input and transfer impedances
-    and their phases at all synapse locations
-    """
-    logger.debug("impedance finder process")
-    # extend DataFrame with columns to store results
-    for freq in freqs:
-        syn_locs["imp_inp_%iHz" % freq] = 0.
-        syn_locs["imp_inp_ph_%iHz" % freq] = 0.
-        syn_locs["imp_trans_%iHz" % freq] = 0.
-        syn_locs["imp_trans_ph_%iHz" % freq] = 0.
-    ssim = bglibpy.SSim(bc)
-    ssim.instantiate_gids([post_gid])
-    cell = ssim.cells[post_gid]
-    # hyperpolarization workaround (just for consistency)
-    if fixhp:
-        for sec in cell.somatic + cell.axonal:
-            sec.uninsert("SK_E2")
-    # calculate transfer impedance from soma to all synapse locations (important for bAP and thus c_post)
-    for freq in freqs:
-        imp = bglibpy.neuron.h.Impedance()
-        imp.loc(0.5, sec=cell.soma)
-        imp.compute(freq, 1)
-        for syn_id, row in syn_locs.iterrows():
-            pos, sec = row["pos"], cell.get_hsection(row["sec_id"])
-            syn_locs.loc[syn_id, "imp_trans_%iHz" % freq] = imp.transfer(pos, sec=sec)
-            syn_locs.loc[syn_id, "imp_trans_ph_%iHz" % freq] = imp.transfer_phase(pos, sec=sec)
-    # calculate input impedance at evey synapse location (important for c_pre)
-    for syn_id, row in syn_locs.iterrows():
-        pos, sec = row["pos"], cell.get_hsection(row["sec_id"])
-        for freq in freqs:
-            imp = bglibpy.neuron.h.Impedance()
-            imp.loc(pos, sec=sec)
-            imp.compute(freq, 1)
-            syn_locs.loc[syn_id, "imp_inp_%iHz" % freq] = imp.input(pos, sec=sec)
-            syn_locs.loc[syn_id, "imp_inp_ph_%iHz" % freq] = imp.input_phase(pos, sec=sec)
-    # drop helper stuff that won't be used
-    inp_imps = syn_locs.drop(["sec_id", "pos"], axis=1)
-    return inp_imps
-
-
-def imp_finder(bc, post_gid, syn_locs, freqs, fixhp=True):
-    """Calculates input and transfer impedances at all synapse locations"""
-    pool = multiprocessing.Pool(processes=1)
-    inp_imps = pool.apply(_imp_finder_process, [bc, post_gid, syn_locs, freqs, fixhp])
-    pool.terminate()
-    return inp_imps
-
-
 def _set_global_params(allparams):
     """Sets global parameters of the simulation"""
     logger.debug("Setting global parameters")
