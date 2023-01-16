@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 XGBoost approach to predict c_pre and c_post or theta_d and theta_p
 last modified: András Ecker 05.2021
@@ -12,20 +11,6 @@ import xgboost as xgb
 from bayes_opt import BayesianOptimization
 
 
-FREQS = np.array([1, 5, 10, 20, 50, 100, 200, 1000])  # from `impedancefinder.py`
-
-
-def drop_imp_features(data, th=10):
-    """Drops impedance features above frequency `th` and all transfer impedance phases"""
-    drop = []
-    for freq in FREQS[FREQS > th]:
-        drop.extend(["imp_inp_%iHz" % freq, "imp_inp_ph_%iHz" % freq,
-                     "imp_trans_%iHz" % freq, "imp_trans_ph_%iHz" % freq])
-    for freq in FREQS[FREQS <= th]:
-        drop.append("imp_trans_ph_%iHz" % freq)
-    data.drop(drop, axis=1, inplace=True)
-
-
 def split_data(data, y, loc=None, mtype=None, train_size=0.95, seed=12345):
     """Split data into train and test datasets"""
     assert y in ["c_pre", "c_post", "theta_d", "theta_p"]
@@ -33,12 +18,7 @@ def split_data(data, y, loc=None, mtype=None, train_size=0.95, seed=12345):
         data = data.loc[data["loc"] == loc, :]
         data.drop("loc", axis=1, inplace=True)
     else:
-        # get dummies for 4 dendrite types + apical (as the equations change between apical vs. basal)
-        idx = data[data["loc"] != "basal"].index
         data = pd.get_dummies(data, columns=["loc"])
-        data["loc_apical"] = 0
-        data.loc[idx, "loc_apical"] = 1
-        data = data.astype({"loc_apical": np.uint8})
     if mtype is not None:
         data = data.loc[data["post_mtype"] == mtype, :]
         data.drop("post_mtype", axis=1, inplace=True)
@@ -78,8 +58,8 @@ def _optimize_model(max_depth, min_child_weight, subsample, colsample_bytree, la
 if __name__ == "__main__":
 
     data = pd.read_pickle("/gpfs/bbp.cscs.ch/project/proj96/circuits/plastic_v1/mldata.pkl")
-    drop_imp_features(data)  # not all impedance features seem to be important ...
-    data = data.groupby("post_mtype", as_index=False, sort=False).apply(lambda x: x.sample(int(min(1e6, len(x)))))
+    # sample 1M synapses on each post_mtypes (this way it's balanced and also fits to memory)
+    data = data.groupby("post_mtype", as_index=False, sort=False).apply(lambda x: x.sample(int(min(1e3, len(x)))))
     gpu = True if os.system("nvidia-smi") == 0 else False  # tricky way to find out if GPU is available...
     params = {"objective": "reg:squarederror", "eval_metric": "rmse",  # simple regression with RMSE loss
               "tree_method": "hist", "grow_policy": "lossguide"}  # greedy and fast setup
@@ -88,7 +68,7 @@ if __name__ == "__main__":
         params["predictor"] = "gpu_predictor"
         params["sampling_method"] = "gradient_based"
 
-    for y in ["theta_d", "theta_p", "c_pre", "c_post"]:
+    for y in ["c_pre", "c_post", "theta_d", "theta_p"]:
         # split data into training and testing and get it to xgb's preferred format
         dtrain, dtest = split_data(data, y=y)
         params["base_score"] = np.mean(dtrain.get_label())
