@@ -1,6 +1,6 @@
 """
 Config file class
-author: András Ecker; last update 01.2023
+author: András Ecker; last update 02.2024
 """
 
 import os
@@ -21,28 +21,39 @@ class Config(object):
         return self._config
 
     @property
-    def circuit_path(self):
-        return self.config["circuit"]["path"]
+    def circuit_config(self):
+        return self.config["circuit"]["config"]
 
     @property
-    def user_target(self):
-        return self.config["circuit"]["user.target"]
+    def node_set(self):
+        return self.config["circuit"]["node_set"]
 
     @property
     def target(self):
         return self.config["circuit"]["target"]
 
     @property
+    def node_pop(self):
+        return self.config["circuit"]["node_pop"]
+
+    @property
+    def edge_pop(self):
+        return self.config["circuit"]["edge_pop"]
+
+    @property
     def extra_recipe_path(self):
-        return self.config["extra_recipe_path"]
+        if "extra_recipe_path" in self.config:
+            return self.config["extra_recipe_path"]
+        else:
+            return None
 
     @property
     def sims_dir(self):
         return self.config["sims_dir"]
 
     @property
-    def bc_path(self):
-        return os.path.join(self.sims_dir, "BlueConfig")
+    def sim_config(self):
+        return os.path.join(self.sims_dir, "simulation_config.json")
 
     @property
     def out_dir(self):

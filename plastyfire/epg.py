@@ -1,17 +1,15 @@
 """
 Extra Parameter Generator
-authors: Giuseppe Chindemi (12.2020)
-+minor modifications and docs by András Ecker (01.2021)
+authors: Giuseppe Chindemi (12.2020) + minor modifications and docs by András Ecker (02.2024)
 """
 
 import numpy as np
 import pandas as pd
 from scipy import stats
-from bluepy.v2.enums import Cell, Synapse
 from neurom import NeuriteType
 
-
 MAX_SEED = 2**32 - 1
+BRANCH_TYPE_OFFSET = 1
 
 
 def _get_covariance_matrix(pathway_recipe):
@@ -30,14 +28,14 @@ def _get_covariance_matrix(pathway_recipe):
 
 
 def _get_distributions(distname, mu, sigma):
-    """Takes mu and sigma (stored as mean and std in the xml recipe) and returns distributions used by Spykfunc"""
+    """Takes mu and sigma (stored as mean and std in the xml recipe) and returns distributions used by `Spykfunc`"""
     if distname == "beta":
-        a = -(mu*(mu**2 - mu + sigma**2)) / sigma**2
+        a = -(mu * (mu**2 - mu + sigma**2)) / sigma**2
         b = ((mu - 1)*(mu**2 - mu + sigma**2)) / sigma**2
         dist = stats.beta(a, b)
     elif distname == "gamma":
-        a = mu**2/sigma**2
-        scale = sigma**2/mu
+        a = mu**2 / sigma**2
+        scale = sigma**2 / mu
         dist = stats.gamma(a, loc=0, scale=scale)
     elif distname == "poisson":
         dist = stats.poisson(mu - 1, loc=1)
@@ -57,15 +55,15 @@ def _get_ltpltd_params(u, gsyn, k_u, k_gsyn):
     """Gets LTP/LTD parameters (randomly based on the release probability `u`)"""
     rho0 = stats.binom.rvs(1, u)
     if rho0 > 0.5:  # Potentiated synapse (see equations (8-9) and (17-18) in Chindemi et al. 2020, bioRxiv)
-        u_d = np.power(u, 1/k_u)
+        u_d = np.power(u, 1 / k_u)
         u_p = u
-        gsyn_d = (1/k_gsyn)*gsyn
+        gsyn_d = (1 / k_gsyn) * gsyn
         gsyn_p = gsyn
     else:  # Depressed synapse (see equations (8-9) and (17-18) in Chindemi et al. 2020, bioRxiv)
         u_d = u
         u_p = np.power(u, k_u)
         gsyn_d = gsyn
-        gsyn_p = k_gsyn*gsyn
+        gsyn_p = k_gsyn * gsyn
     params = {"rho0_GB": rho0, "Use_d_TM": u_d, "Use_p_TM": u_p,
               "gmax_d_AMPA": gsyn_d, "gmax_p_AMPA": gsyn_p}
     return params
@@ -74,12 +72,14 @@ def _get_ltpltd_params(u, gsyn, k_u, k_gsyn):
 class ParamsGenerator(object):
     """Small class for generating synapse parameters with correlations"""
 
-    def __init__(self, circuit, extra_recipe_path, k_u=0.2, k_gsyn=2):
+    def __init__(self, circuit, node_pop, edge_pop, extra_recipe_path, k_u=0.2, k_gsyn=2):
         """Constructor that loads circuit and extra recipe parameters from csv"""
+        self.circuit = circuit
+        self.node_pop = node_pop
+        self.edge_pop = edge_pop
+        self.extra_recipe = pd.read_csv(extra_recipe_path, index_col=[0, 1])
         self.k_u = k_u
         self.k_gsyn = k_gsyn
-        self.circuit = circuit
-        self.extra_recipe = pd.read_csv(extra_recipe_path, index_col=[0, 1])
         # Set ordered list of parameter names
         self.namelst = ["u", "d", "f", "nrrp", "gsyn", "spinevol"]
         self.paramlst = ["Use0_TM", "Dep_TM", "Fac_TM", "Nrrp_TM", "gmax0_AMPA", "volume_CR"]
@@ -92,16 +92,17 @@ class ParamsGenerator(object):
         in other words: inter-connection variability is *not* assumed to be zero
         """
         # Find pathway recipe
-        pre_mtype = self.circuit.cells.get(pre_gid, Cell.MTYPE)
-        post_mtype = self.circuit.cells.get(post_gid, Cell.MTYPE)
+        pre_mtype = self.circuit.nodes[self.node_pop].get(pre_gid, "mtype")
+        post_mtype = self.circuit.nodes[self.node_pop].get(post_gid, "mtype")
         pathway_recipe = self.extra_recipe.loc[pre_mtype, post_mtype]
         # Assemble synapse parameter distribution list
         distlst = [_get_distributions(pathway_recipe["%sDist" % name],
                    pathway_recipe["%s" % name], pathway_recipe["%sSD" % name]) for name in self.namelst]
 
+        # (I think the feature should be called `efferent_section_type`, but this one gives correct results)
+        syns = self.circuit.edges[self.edge_pop].pair_edges(pre_gid, post_gid, "afferent_section_type")
         # Generate parameters for each synapse (TODO: vectorize)
-        syns = self.circuit.connectome.pair_synapses(pre_gid, post_gid, Synapse.POST_BRANCH_TYPE)
-        syn_params = dict()
+        syn_params = {}
         for syn_id, branch_type in syns.items():
             # Generate multivariate normal sample with prescribed correlations
             cov = _get_covariance_matrix(pathway_recipe)
@@ -110,14 +111,13 @@ class ParamsGenerator(object):
             # Convert random normal samples to desired distributions
             sample_params = map(_normtodist, distlst, sample_normal)
             params = dict(zip(self.paramlst, sample_params))
-            # Add LTP / LTD params
+            # Add LTP / LTD params, and NMDA conductance
             params.update(_get_ltpltd_params(params["Use0_TM"], params["gmax0_AMPA"], self.k_u, self.k_gsyn))
-            # Add NMDA conductance
             params["gmax_NMDA"] = params["gmax0_AMPA"] * pathway_recipe["gsynSRSF"]
             # Add branch type
-            if branch_type == NeuriteType.basal_dendrite:
+            if branch_type + BRANCH_TYPE_OFFSET == NeuriteType.basal_dendrite:
                 params["loc"] = "basal"
-            elif branch_type == NeuriteType.apical_dendrite:
+            elif branch_type + BRANCH_TYPE_OFFSET == NeuriteType.apical_dendrite:
                 params["loc"] = "apical"
             else:
                 raise ValueError("Unknown neurite type")

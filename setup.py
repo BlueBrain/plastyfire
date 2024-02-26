@@ -19,24 +19,18 @@ setup(
     long_description="plastyfire: generalize plastic synapses @BBP",
     url="http://bluebrain.epfl.ch",
     license="LGPL-3.0",
-    install_requires=["pyyaml>=5.3.1",
-                      "cached-property>=1.5.2",
-                      "tqdm>=4.52.0",
-                      "h5py>=2.7,<3",  # voxcell and thus bluepy 0.16.0 require h5py<3
-                      "numpy==1.17.3",
-                      "scipy>=1.6.0",
-                      "pandas>=1.2.1",
-                      "neurom==1.5.4",  # morph-tool<2.5 only works with NeuroM v1 and NeuroM v1 version higher than this require h5py>3...
-                      "morphio==2.6.2",  # morph-tool<2.5 only works with MorphIO v2 and MorphIO v2 version higher than this require h5py>3...
-                      "morph-tool==2.2.21",  # bluepy 0.16 is only constistent with morph-tool<2.5 and this is the highest version of morph-tool, that works with h5py<3
-                      "libsonata>=0.1.6",
-                      "xgboost>=1.4.0",
-                      "bayesian-optimization>=1.2.0"
-                      ] + [
-                      "bluepy[all]==0.16.0",
-                      "bglibpy<4.1",  # 4.1 is the first version that doesn't keep global syn_idx
-                      "bluepyparallel>=0.0.5"
-                      ],
+    install_requires=["cached-property>=1.5.2",
+                      "tqdm>=4.66.2",
+                      "h5py>=3.10.0",
+                      "numpy>=1.26.4",
+                      "scipy>=1.12.0",
+                      "pyarrow>=15.0.0",  # to keep pandas happy
+                      "pandas>=2.2.0",
+                      "neurom==3.2.8",
+                      "libsonata>=0.1.25",
+                      "bluepysnap>=3.0.1",
+                      "Connectome-Utilities>=0.4.6",
+                      "bluecellulab>=2.2.5"],
     packages=find_packages(),
     python_requires=">=3.6",
     extras_require={"docs": ["sphinx", "sphinx-bluebrain-theme"]},

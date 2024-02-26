@@ -1,6 +1,6 @@
 """
-Updates sonata edge file with plasticity related parameters
-last modified: András Ecker 05.2021
+Updates SONATA edge file with plasticity related parameters
+last modified: András Ecker 02.2024
 """
 
 import os
@@ -10,8 +10,7 @@ from tqdm import tqdm
 from cached_property import cached_property
 import numpy as np
 import pandas as pd
-from bluepy.v2 import Circuit
-from bluepy.v2.enums import Cell
+from bluepysnap import Circuit
 
 from plastyfire.config import Config
 
@@ -89,7 +88,9 @@ class SonataWriter(Config):
 
     @cached_property
     def inp_sonata_fname(self):
-        return Circuit(self.circuit_path).config["connectome"]
+        for edge in Circuit(self.circuit_config).config["networks"]["edges"]:
+            if self.edge_pop in edge["populations"]:
+                return edge["edges_file"]
 
     @property
     def out_pkl_fname(self):
@@ -97,7 +98,7 @@ class SonataWriter(Config):
 
     @property
     def out_sonata_fname(self):
-        return os.path.join(self.out_dir, "edges.sonata")
+        return os.path.join(self.out_dir, "edges.h5")
 
     def init_sonata(self):
         """Copies base circuit's sonata connectome and adds extra fields"""
@@ -111,13 +112,14 @@ class SonataWriter(Config):
 
     def merge_csvs(self, save=False):
         """Loads in saved results from all sims and after some preprocessing
-        concatenates them to a big DataFrame to be used in the sonata edge file"""
-        c = Circuit(self.bc_path)
-        gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
+        concatenates them to a big DataFrame to be used in the SONATA edge file"""
+        c = Circuit(self.circuit_config)
+        df = c.nodes[self.node_pop].get(self.target, ["synapse_class", "mtype"])
+        gids = df.loc[df["synapse_class"] == "EXC"].index.to_numpy()  # just to make sure
         df = _load_csvs(gids, self.sims_dir)
         # set SS to SS thresholds to -1 (those won't be plastic - see Chindemi et al. 2020, bioRxiv)
-        ss_gids = c.cells.ids({"$target": self.target, Cell.MTYPE: "L4_SSC"})
-        ss_syn_idx = c.connectome.pathway_synapses(ss_gids, ss_gids)
+        ss_gids = df.loc[df["mtype"] == "L4_SSC"].index.to_numpy()
+        ss_syn_idx = c.edges[self.edge_pop].pathway_edges(ss_gids, ss_gids)
         df.loc[ss_syn_idx, "theta_d"] = NOT_DEFINED_TH
         df.loc[ss_syn_idx, "theta_p"] = NOT_DEFINED_TH
         # where depression th. is higher then potentiation th. set both to -1
@@ -151,7 +153,7 @@ class SonataWriter(Config):
 
 
 if __name__ == "__main__":
-    writer = SonataWriter("../configs/hexO1_v7.yaml")
+    writer = SonataWriter("../configs/Zenodo_O1.yaml")
     writer.init_sonata()
     df = writer.merge_csvs()
     writer.update_sonata(df)

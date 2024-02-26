@@ -1,15 +1,14 @@
 """
 Writes sbatch scripts for every gid (given a circuit and a target in the config file)
-last modified: András Ecker 05.2021
+last modified: András Ecker 02.2024
 """
 
 import os
 import pathlib
-import shutil
+import json
 from tqdm import tqdm
 import numpy as np
-from bluepy.v2 import Circuit
-from bluepy.v2.enums import Cell
+from bluepysnap import Circuit
 
 from plastyfire.config import Config
 
@@ -30,38 +29,41 @@ def get_cpu_time(n_afferents):
 
 class SimWriter(Config):
     """Small class to setup single cell simulations"""
-
     def write_batch_sript(self, f_name, templ, gid, cpu_time, qos):
         """Writes single cell batch script"""
         with open(f_name, "w+", encoding="latin1") as f:
             f.write(templ.format(name="plast_%i" % gid, cpu_time=cpu_time, qos=qos,
-                                 config=self.config_path, gid=gid))
+                                 config=self._config_path, gid=gid))
 
     def write_sim_files(self):
-        """Writes simple BlueConfig used by BGLibPy (and for gid queries) and batch scripts for single cell sims"""
-        from plastyfire.bcwriter import BCWriter
-
-        # write BlueConfig and user.target
+        """Writes simple `simulation_config.json` used by `bluecellulab` and batch scripts for single cell sims"""
+        # create and write simple simulation config
         pathlib.Path(self.sims_dir).mkdir(exist_ok=True)
-        target_fname = os.path.join(self.sims_dir, "user.target")
-        shutil.copyfile(self.user_target, target_fname)
-        bcw = BCWriter(self.circuit_path, duration=3000, target=self.target, target_file=target_fname, base_seed=12345)
-        bc = bcw.write(self.sims_dir)
+        sim_config = {"run": {"dt": 0.025, "tstop": 3000.0, "random_seed": 12345},
+                      "network": self.circuit_config,
+                      "node_sets_file": self.node_set,
+                      "node_set": self.target,
+                      "output": {"output_dir": "out"},
+                      "connection_overrides": [{"name": "plasticity", "source": self.target, "target": self.target,
+                                  "modoverride": "GluSynapse", "weight": 1.0}]}
+        with open(os.path.join(self.sims_dir, "simulation_config.json"), "w", encoding="utf-8") as f:
+            json.dump(sim_config, f, indent=4)
+
         # create folders for batch scripts and output csv files
         sbatch_dir = os.path.join(self.sims_dir, "sbatch")
         pathlib.Path(sbatch_dir).mkdir(exist_ok=True)
         pathlib.Path(os.path.join(self.sims_dir, "out")).mkdir(exist_ok=True)
-
         # get all EXC gids and write sbatch scripts for all of them
-        c = Circuit(bc)
-        gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
-        with open("templates/simulation.batch.tmpl", "r") as f:
+        c = Circuit(self.circuit_config)
+        df = c.nodes[self.node_pop].get(self.target, "synapse_class")
+        gids = df.loc[df == "EXC"].index.to_numpy()  # just to make sure
+        with open(os.path.join("templates", "simulation.batch.tmpl"), "r") as f:
             templ = f.read()
         f_names = []
         for gid in tqdm(gids, desc="Writing batch scripts for every EXC gid", miniters=len(gids)/100):
             f_name = os.path.join(sbatch_dir, "sim_%i.batch" % gid)
             f_names.append(f_name)
-            n_afferents = len(np.intersect1d(c.connectome.afferent_gids(gid), gids))
+            n_afferents = len(np.intersect1d(c.edges[self.edge_pop].afferent_nodes(gid), gids))
             cpu_time, qos = get_cpu_time(n_afferents)
             self.write_batch_sript(f_name, templ, gid, cpu_time, qos)
         # write master launch scripts in batches of 5k
@@ -75,8 +77,9 @@ class SimWriter(Config):
     def relaunch_failed_jobs(self, error, verbose=False):
         """Checks output files and if they aren't presents checks logs for specific `error`
         and creates master launch script to relaunch all failed jobs"""
-        c = Circuit(os.path.join(self.sims_dir, "BlueConfig"))
-        gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC"})
+        c = Circuit(self.circuit_config)
+        df = c.nodes[self.node_pop].get(self.target, "synapse_class")
+        gids = df.loc[df == "EXC"].index.to_numpy()  # just to make sure
         f_names = []
         for gid in tqdm(gids, desc="Checking log files", miniters=len(gids)/100):
             if not os.path.isfile(os.path.join(self.sims_dir, "out", "%i.csv" % gid)):
@@ -95,10 +98,11 @@ class SimWriter(Config):
                 print("Generated relaunch_failed.sh master launch script with %i jobs" % len(f_names))
 
     def check_failed_thresholds(self):
-        """Check log files and returns statistics about failed threshold calibrations"""
-        c = Circuit(os.path.join(self.sims_dir, "BlueConfig"))
-        gids = c.cells.ids({"$target": self.target, Cell.SYNAPSE_CLASS: "EXC", Cell.LAYER: 6})
-        mtypes = c.cells.get(gids, Cell.MTYPE).to_numpy()
+        """Check log files and returns statistics about failed threshold calibrations (for L6 PCs)"""
+        c = Circuit(self.circuit_config)
+        df = c.nodes[self.node_pop].get(self.target, ["synapse_class", "layer", "mtype"])
+        df = df.loc[(df["synapse_class"] == "EXC") & (df["layer"] == "6")]
+        gids, mtypes = df.index.to_numpy(), df["mtype"].to_numpy()
         not_defined_ths = {}
         for gid, mtype in tqdm(zip(gids, mtypes), total=len(gids),
                                desc="Checking log files", miniters=len(gids) / 100):
@@ -112,13 +116,13 @@ class SimWriter(Config):
         unique_mtypes, counts = np.unique(mtypes, return_counts=True)
         for mtype, count in not_defined_ths.items():
             n = counts[unique_mtypes == mtype][0]
-            print("For %s: %i gids (%.2f%% of total) couldn't be calibrated" % (mtype, count, (count/n)*100))
+            print("For %s: %i gids (%.2f%% of total) couldn't be calibrated" % (mtype, count, (count/n) * 100))
 
 
 if __name__ == "__main__":
-    config_path = "/gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/configs/hexO1_v7.yaml"
+    config_path = "../configs/Zenodo_O1.yaml"
     writer = SimWriter(config_path)
-    # writer.write_sim_files()
+    writer.write_sim_files()
     # writer.relaunch_failed_jobs("slurmstepd:", True)
-    writer.check_failed_thresholds()
+    # writer.check_failed_thresholds()
 
