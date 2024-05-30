@@ -3,6 +3,7 @@ Single cell simulations in bluecellulab
 last modified: András Ecker, 02.2024
 """
 
+import os
 import re
 import logging
 import multiprocessing
@@ -213,7 +214,7 @@ def c_pre_finder(sim_config, fit_params, syn_extra_params, pre_gid, post_gid,
     return results["c_pre"]
 
 
-def _c_post_finder_process(sim_config, stimulus, fit_params, syn_extra_params, pre_gid, post_gid,
+def _c_post_finder_process(sim_config, fit_params, syn_extra_params, pre_gid, post_gid, stimulus,
                            node_pop, edge_pop, fixhp):
     """
     Multiprocessing subprocess for `c_post_finder()`
@@ -281,8 +282,8 @@ def c_post_finder(sim_config, fit_params, syn_extra_params, pre_gid, post_gid, s
     # find c_post
     logger.debug("Stimulating cell with {} nA pulse ({} ms)".format(stimulus["amp"], stimulus["width"]))
     pool = multiprocessing.Pool(processes=1)
-    results = pool.apply(_c_post_finder_process, [sim_config, stimulus, fit_params, syn_extra_params,
-                                                  pre_gid, post_gid, node_pop, edge_pop, fixhp])
+    results = pool.apply(_c_post_finder_process, [sim_config, fit_params, syn_extra_params,
+                                                  pre_gid, post_gid, stimulus, node_pop, edge_pop, fixhp])
     pool.terminate()
     # validate number of spikes
     logger.debug("Spike timing: {}".format(results["t_spikes"]))
@@ -296,10 +297,152 @@ def c_post_finder(sim_config, fit_params, syn_extra_params, pre_gid, post_gid, s
         logger.debug("Stimulating cell with %f nA pulse", amp)
         stimulus = {"nspikes": 1, "freq": 0.1, "width": stimulus["width"], "offset": 1000., "amp": amp}
         pool = multiprocessing.Pool(processes=1)
-        results = pool.apply(_c_post_finder_process, [sim_config, stimulus, fit_params, syn_extra_params,
-                                                      pre_gid, post_gid, node_pop, edge_pop, fixhp])
+        results = pool.apply(_c_post_finder_process, [sim_config, fit_params, syn_extra_params,
+                                                      pre_gid, post_gid, stimulus, node_pop, edge_pop, fixhp])
         pool.terminate()
         logger.debug("C_post: %s", str(results["c_post"]))
         return results["c_post"] if len(results["t_spikes"]) == 1 else None
     return results["c_post"]
+
+
+def _runconnectedpair_process(results, basedir, c_pre, c_post, fit_params, syn_extra_params, synrec, fastforward,
+                              node_pop, edge_pop, fixhp):
+    """..."""
+    sim_config = os.path.join(basedir, "simulation_config.json")
+    ssim = bluecellulab.SSim(sim_config)
+    bluecellulab.neuron.h.cvode.atolscale("v", .1)
+    logger.debug("Loaded simulation")
+    ssim.instantiate_gids([(node_pop, post_gid)], add_synapses=True, add_minis=False, add_stimuli=True, add_replay=True,
+                          intersect_pre_gids=[(node_pop, pre_gid)])
+    cell = ssim.cells[(node_pop, post_gid)]
+    if fixhp:  # hyperpolarization workaround
+        for sec in cell.somatic + cell.axonal:
+            sec.uninsert("SK_E2")
+    # TODO: add stimuli
+    if fit_params is not None:  # setup global parameters
+        _set_global_params(fit_params)
+
+    prespikes = np.unique(np.loadtxt(os.path.join(basedir, 'out.dat'), skiprows=1)[:, 0])
+    # Generate supplementary model parameters
+    pgen = ParamsGenerator(circuitpath, extra_recipe)
+    syn_extra_params = {}
+    for pg in pregids:
+        syn_extra_params.update(pgen.generate_params(pg, postgid))
+    # Set fitted model parameters
+    if fit_params != None:
+        _set_global_params(fit_params)
+        # Enable in vivo mode (global)
+        if invivo:
+            bglibpy.neuron.h.cao_CR_GluSynapse = 1.2  # mM
+            # TODO Set global cao
+        if ca2p5:
+            bglibpy.neuron.h.cao_CR_GluSynapse = 2.5  # mM
+            # TODO Set global cao
+        # Store model properties
+        modprop = {key: getattr(bglibpy.neuron.h, '%s_GluSynapse' % key) for key in default_modprop}
+        # Allocate recording vectors
+        actual_synrec = default_synrec if synrec == None else synrec
+        time_series = {key: list() for key in actual_synrec}
+        synprop = {key: list() for key in default_synprop}
+        # Setup synapses
+        for syn_id in cell.synapses.keys():
+            logger.debug('Configuring synapse %d', syn_id)
+            synapse = cell.synapses[syn_id]
+            # Set local parameters
+            _set_local_params(synapse, fit_params,
+                              syn_extra_params[(postgid, syn_id)],
+                              c_pre[postgid, syn_id],
+                              c_post[postgid, syn_id])
+            # Enable in vivo mode (synapse)
+            if invivo:
+                synapse.hsynapse.Use0_TM = 0.15 * synapse.hsynapse.Use0_TM
+                synapse.hsynapse.Use_d_TM = 0.15 * synapse.hsynapse.Use_d_TM
+                synapse.hsynapse.Use_p_TM = 0.15 * synapse.hsynapse.Use_p_TM
+            if ca2p5:
+                synapse.hsynapse.Use0_TM = 1.09 * synapse.hsynapse.Use0_TM if 1.09 * synapse.hsynapse.Use0_TM <= 1 else 1
+                synapse.hsynapse.Use_d_TM = 1.09 * synapse.hsynapse.Use_d_TM if 1.09 * synapse.hsynapse.Use_d_TM <= 1 else 1
+                synapse.hsynapse.Use_p_TM = 1.09 * synapse.hsynapse.Use_p_TM if 1.09 * synapse.hsynapse.Use_p_TM <= 1 else 1
+            # Setting up recordings
+            for key, lst in time_series.items():
+                recorder = bglibpy.neuron.h.Vector()
+                recorder.record(getattr(synapse.hsynapse, '_ref_%s' % key))
+                lst.append(recorder)
+            # Store synapse properties
+            for key, lst in synprop.items():
+                if key == 'Cpre':
+                    lst.append(c_pre[postgid, syn_id])
+                elif key == 'Cpost':
+                    lst.append(c_post[postgid, syn_id])
+                elif key == 'loc':
+                    lst.append(syn_extra_params[(postgid, syn_id)]['loc'])
+                else:
+                    lst.append(getattr(synapse.hsynapse, key))
+            # Show all params
+            for attr in dir(synapse.hsynapse):
+                if re.match('__.*', attr) is None:
+                    logger.debug('%s = %s', attr, str(getattr(synapse.hsynapse, attr)))
+        # Run
+        endtime = 30000 if DEBUG else float(ssim.bc.Run.Duration)
+        if fastforward != None:
+            # Run until fastforward point
+            logger.debug('Fastforward enabled, simulating %d seconds...', fastforward / 1000.)
+            ssim.run(fastforward, cvode=True)
+            # Fastforward synapses
+            logger.debug('Updating synapses...')
+            for syn_id in cell.synapses.keys():
+                logger.debug('Configuring synapse %d', syn_id)
+                synapse = cell.synapses[syn_id]
+                if synapse.hsynapse.rho_GB >= 0.5:
+                    synapse.hsynapse.rho_GB = 1.
+                    synapse.hsynapse.Use_TM = synapse.hsynapse.Use_p_TM
+                    synapse.hsynapse.gmax_AMPA = synapse.hsynapse.gmax_p_AMPA
+                else:
+                    synapse.hsynapse.rho_GB = 0.
+                    synapse.hsynapse.Use_TM = synapse.hsynapse.Use_d_TM
+                    synapse.hsynapse.gmax_AMPA = synapse.hsynapse.gmax_d_AMPA
+            # Complete run
+            logger.debug('Simulating remaining %d seconds...', (endtime - fastforward) / 1000.)
+            bglibpy.neuron.h.cvode_active(1)
+            bglibpy.neuron.h.continuerun(endtime)
+        else:
+            logger.debug('Simulating %d seconds...', endtime / 1000.)
+            ssim.run(endtime, cvode=True)
+        logger.debug('Simulation completed')
+        # Collect all properties
+        synprop.update(modprop)
+        # Collect Results
+        results['t'] = np.array(ssim.get_time())
+        results['v'] = np.array(ssim.get_voltage_traces()[postgid])
+        results['prespikes'] = np.array(prespikes)
+        results['synprop'] = synprop
+        for key, lst in time_series.items():
+            results[key] = np.transpose([np.array(rec) for rec in lst])
+
+
+def runconnectedpair(basedir, fit_params=None, synrec=None, fastforward=None,
+                     node_pop="S1nonbarrel_neurons", edge_pop="S1nonbarrel_neurons__S1nonbarrel_neurons__chemical",
+                     fixhp=True):
+    # Get reference thetas
+    sim_config = os.path.join(basedir, "simulation_config.json")
+    c_pre = c_pre_finder(sim_config, fit_params, syn_extra_params, pre_gid, post_gid,
+                         node_pop=node_pop, edge_pop=edge_pop, fixhp=fixhp)
+    nspikes, freq = 1, 0.1
+    for pulse_width in [1.5, 3, 5]:
+        sim_results = spike_threshold_finder(sim_config, post_gid, nspikes, freq, pulse_width, 1000., 0.05, 5., 100,
+                                             node_pop=node_pop, fixhp=fixhp)
+        if sim_results is not None:
+            break
+    stimulus = {"nspikes": nspikes, "freq": freq, "width": sim_results["width"], "offset": sim_results["offset"],
+                "amp": sim_results["amp"]}
+    c_post = c_post_finder(sim_config, fit_params, syn_extra_params, pre_gid, post_gid, stimulus,
+                           node_pop=node_pop, edge_pop=edge_pop, fixhp=fixhp)
+    # Run main simulation
+    logger.info("Simulating %s...", basedir)
+    manager = multiprocessing.Manager()
+    results = manager.dict()
+    child_proc = multiprocessing.Process(target=_runconnectedpair_process,
+            args=[results, basedir, c_pre, c_post, fit_params, synrec, fastforward, invivo, ca2p5, fixhp])
+    child_proc.start()
+    child_proc.join()
+    return dict(results)
 
