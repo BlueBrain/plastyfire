@@ -43,11 +43,11 @@ def epsp_slope(vtrace):
 
 
 class Experiment(object):
+    """
+    A full STDP induction experiment.
+    The experiment consists of two connectivity tests (C01 and C02), separated by the induction protocol.
+    """
     def __init__(self, data, c01duration=40., c02duration=40., period=10., c01period=None, c02period=None):
-        """
-        A full STDP induction experiment.
-        The experiment consists of two connectivity tests (C01 and C02), separated by the induction protocol.
-        """
         if type(data) == dict:
             self.t = data["t"]
             self.v = data["v"]
