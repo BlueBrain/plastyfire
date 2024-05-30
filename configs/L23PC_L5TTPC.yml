@@ -1,0 +1,31 @@
+label: L23PC_L5TTPC
+reference: Sjostrom and Hausser 2006
+seed: 19092006
+npairs: 100
+circuit:
+    config: "/gpfs/bbp.cscs.ch/project/proj96/circuits/O1/circuit_config.json"
+    node_set: "/gpfs/bbp.cscs.ch/project/proj96/circuits/O1/node_sets.json"
+    target: "hex_O1Excitatory"
+    node_pop: "S1nonbarrel_neurons"
+    edge_pop: "S1nonbarrel_neurons__S1nonbarrel_neurons__chemical"
+pregid_conf:
+    mtype: ["L2_TPC:A", "L2_TPC:B", "L3_TPC:A", "L3_TPC:B"]
+postgid_conf:
+    mtype: ["L5_TPC:A", "L5_TPC:B"]
+geom_cons:
+    max_dist: [50.0, 700.0, 10.0]  # [x, y, z] um
+stimulus:
+    freq: [50.]  # Hz
+    amp: find  # nA
+    amp_min: 0.5
+    amp_max: 3.0
+    amp_lev: 10
+    nspikes: 5
+    dt: [10]  # ms
+    width: 3.0
+    T: 10000  # ms
+    offset: 1000  # ms
+    nreps: 15
+    C01_duration: 10  # min
+    C02_duration: 10  # min
+
