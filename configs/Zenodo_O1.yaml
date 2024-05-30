@@ -1,14 +1,11 @@
 circuit:
-    config: "<PATH-TO-ZENODO_DOWNLOAD>/O1/circuit_config.json"
-    node_set: "<PATH-TO-ZENODO_DOWNLOAD>/O1/node_sets.json"
+    config: "/gpfs/bbp.cscs.ch/project/proj96/circuits/O1/circuit_config.json"
+    node_set: "/gpfs/bbp.cscs.ch/project/proj96/circuits/O1/node_sets.json"
     target: "hex_O1Excitatory"
     node_pop: "S1nonbarrel_neurons"
     edge_pop: "S1nonbarrel_neurons__S1nonbarrel_neurons__chemical"
-
-sims_dir: "<SIMULATION-DIRECTORY>"
-
-out_dir: "<OUTPUT-DIRECTORY>"
-
+sims_dir: "/gpfs/bbp.cscs.ch/project/proj96/scratch/home/ecker/bcl-plastyfire/"
+out_dir: "/gpfs/bbp.cscs.ch/project/proj96/circuits/plastic_v1/"
 fit_params:
     tau_effca_GB_GluSynapse: 278.3177658387
     gamma_d_GB_GluSynapse: 101.5387594661
