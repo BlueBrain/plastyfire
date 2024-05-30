@@ -1,15 +1,14 @@
 """
 Config file class
-author: András Ecker; last update 02.2024
+author: András Ecker; last update 05.2024
 """
 
 import os
 import yaml
 
 
-class Config(object):
-    """Class to store config parameters about the simulations"""
-
+class BaseConfig(object):
+    """Class to store common config parameters about the simulations"""
     def __init__(self, config_path):
         """YAML config file based constructor"""
         self._config_path = config_path
@@ -55,6 +54,9 @@ class Config(object):
     def sim_config(self):
         return os.path.join(self.sims_dir, "simulation_config.json")
 
+
+class Config(BaseConfig):
+    """Class to store config parameters about finding C_pre and C_post for all synapses"""
     @property
     def out_dir(self):
         return self.config["out_dir"]
@@ -62,3 +64,98 @@ class Config(object):
     @property
     def fit_params(self):
         return self.config["fit_params"]
+
+
+class OptConfig(BaseConfig):
+    """Class to store config parameters about the optimization of model parameters"""
+    @property
+    def label(self):
+        return self.config["label"]
+
+    @property
+    def seed(self):
+        return self.config["seed"]
+
+    @property
+    def npairs(self):
+        return self.config["npairs"]
+
+    @property
+    def pre_mtype(self):
+        return self.config["pregid_conf"]["mtype"]
+
+    @property
+    def post_mtype(self):
+        return self.config["postgid_conf"]["mtype"]
+
+    @property
+    def max_dists(self):
+        return self.config["geom_cons"]["max_dists"]
+
+    @property
+    def freq(self):
+        return self.config["stimulus"]["freq"]
+
+    @property
+    def amp(self):
+        return None if self.config["stimulus"]["amp"] == "find" else self.config["stimulus"]["amp"]
+
+    @property
+    def amp_min(self):
+        return self.config["stimulus"]["amp_min"]
+
+    @property
+    def amp_max(self):
+        return self.config["stimulus"]["amp_max"]
+
+    @property
+    def amp_lev(self):
+        return self.config["stimulus"]["amp_lev"]
+
+    @property
+    def nspikes(self):
+        return self.config["stimulus"]["nspikes"]
+
+    @property
+    def dt(self):
+        return self.config["stimulus"]["dt"]
+
+    @property
+    def width(self):
+        return self.config["stimulus"]["width"]
+
+    @property
+    def dt(self):
+        return self.config["stimulus"]["dt"]
+
+    @property
+    def width(self):
+        return self.config["stimulus"]["width"]
+
+    @property
+    def T(self):
+        return self.config["stimulus"]["T"]
+
+    @property
+    def offset(self):
+        return self.config["stimulus"]["offset"]
+
+    @property
+    def nreps(self):
+        return self.config["stimulus"]["nreps"]
+
+    @property
+    def C01_duration(self):
+        return self.config["stimulus"]["C01_duration"]
+
+    @property
+    def C02_duration(self):
+        return self.config["stimulus"]["C02_duration"]
+
+    @property
+    def C01_T(self):
+        return self.config["stimulus"]["C01_duration"] if "C01_duration" else self.T
+
+    @property
+    def C02_T(self):
+        return self.config["stimulus"]["C02_duration"] if "C02_duration" else self.T

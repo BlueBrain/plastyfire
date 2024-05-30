@@ -10,9 +10,9 @@ from tqdm import tqdm
 import numpy as np
 from bluepysnap import Circuit
 
-from plastyfire.config import Config
+from plastyfire.config import OptConfig, Config
 
-
+MIN2MS = 60 * 1000.
 CPU_TIME = 1.5  # heuristics: c_pre and c_post for a single connection takes ca. 1.3 minutes to simulate/calculate
 
 
@@ -27,8 +27,76 @@ def get_cpu_time(n_afferents):
     return cpu_time_str, qos
 
 
+class OptSimWriter(OptConfig):
+    """Class to setup single cell simulations for the optimization of model parameters"""
+    def find_pairs(self):
+        """..."""
+
+        c = Circuit(self.circuit_config)
+        df = c.nodes[self.node_pop].get(self.target, "synapse_class")
+        gids = df.loc[df == "EXC"].index.to_numpy()  # just to make sure
+
+
+    def write_sim_files(self):
+        """..."""
+        # Derived params
+        n_spikes_before = int(self.C01_duration * MIN2MS / self.C01_T)
+        n_spikes_after = int(self.C02_duration * MIN2MS / self.C02_T)
+        # CPU time heuristics (TODO: find out where 8 comes from)
+        before_duration = n_spikes_before * self.C01_T
+        t_stop = before_duration + n_spikes_after * self.C02_T + self.nreps * self.T
+        h, m = np.divmod(8 * t_stop / 1000., 3600)
+        m, s = np.divmod(m, 60)
+        cpu_time_str = "%.2i:%.2i:%.2i" % (h, m, s)
+
+        all_sims = []
+        for freq in self.freq:
+            for dt in self.dt:
+                sim_name = "%iHz_%ims" % (int(freq), int(dt))
+                # Generate postsynaptic stimulus times (only one period to set periodic stimulus)
+                isi = 1000.0 / freq  # Inter Spike Interval (ms)
+                post_spikes = np.array([self.offset + before_duration + i * isi for i in range(self.nspikes)])
+                # Generate presynaptic spike times (C01 and C02)
+                before_pre_spikes = [self.offset + i * self.C01_T for i in range(n_spikes_before)]
+                after_pre_spikes = [self.offset + n_spikes_before * self.C01_T + self.nreps * self.T + \
+                                    i * self.C02_T for i in range(n_spikes_after)]
+                # Generate sims for all pairs
+                for pre_gid, post_gid in pairs:
+                    try:
+                        post_sim = pickle.load(open(os.path.join("data", "simulations", "%i.pkl" % post_gid), "rb"))
+                        # Get pulse amplitude and compute spike delays at the given frequency
+                        amplitude = post_sim[freq]["amp"]
+                        spike_delay = post_sim[freq]["t_spikes"] - post_sim[freq]["t_stimuli"]
+                    except IOError:  # Fallback to default
+                        warnings.warn("Cannot read stimulus amplitude from cache, using 1 nA")
+                        spike_delay = self.nspikes * [self.width / 2.]
+                        amplitude = 1.0  # nA
+                    pre_spikes = [self.offset + before_duration + i * isi - dt + spike_delay[i] + j * self.T
+                                  for j in range(self.nreps) for i in range(self.nspikes)]
+                    pre_spikes = np.array(before_pre_spikes + pre_spikes + after_pre_spikes)
+                    workdir = os.path.abspath(os.path.join(self.sims_dir, self.label,
+                                                           "%i-%i" % (pre_gid, post_gid), sim_name))
+                    pathlib.Path(workdir).mkdir(exist_ok=True)
+
+                # TODO: write sim files
+                sim_config = {"run": {"dt": 0.025, "tstop": t_stop, "random_seed": np.random.randint(1, 999999)},
+                              "network": self.circuit_config,
+                              "node_sets_file": self.node_set,
+                              "node_set": self.target,
+                              "output": {"output_dir": "out"},
+                              "connection_overrides": [
+                                  {"name": "plasticity", "source": self.target, "target": self.target,
+                                   "modoverride": "GluSynapse", "weight": 1.0}]}
+                with open(os.path.join(workdir, "simulation_config.json"), "w", encoding="utf-8") as f:
+                    json.dump(sim_config, f, indent=4)
+
+                all_sims.append((pre_gid, post_gid, freq, dt, os.path.join(workdir, "simulation.batch")))
+        sim_idx = pd.DataFrame(all_sims, columns=["pregid", "postgid", "frequency", "dt", "path"])
+        return sim_idx
+
+
 class SimWriter(Config):
-    """Small class to setup single cell simulations"""
+    """Class to setup single cell simulations for finding C_pre and C_post for all synapses"""
     def write_batch_sript(self, f_name, templ, gid, cpu_time, qos):
         """Writes single cell batch script"""
         with open(f_name, "w+", encoding="latin1") as f:
