@@ -23,6 +23,10 @@ DEBUG = False
 # some variable names have to be patched (to match the current state of GluSynapse.mod)
 PARAM_MAP = {"Use_d_TM": "Use_d", "Use_p_TM": "Use_p", "Use0_TM": "Use",
              "Dep_TM": "Dep", "Fac_TM": "Fac", "Nrrp_TM": "Nrrp"}
+SYNPROPS = ["Cpre", "Cpost", "loc", "Use0_TM", "Dep_TM", "Fac_TM", "Nrrp_TM", "gmax0_AMPA", "gmax_NMDA",
+            "volume_CR", "synapseID", "theta_d_GB", "theta_p_GB"]
+MOD_PROPS = ["gamma_d_GB", "gamma_p_GB"]  # 'tau_exp_GB'
+SYNREC = ["rho_GB", "Use_TM", "gmax_AMPA", "cai_CR", "vsyn", "ica_NMDA", "ica_VDCC", "effcai_GB"]
 
 
 def _get_spikes(t, v, dt_int=0.025):
@@ -305,121 +309,94 @@ def c_post_finder(sim_config, fit_params, syn_extra_params, pre_gid, post_gid, s
     return results["c_post"]
 
 
-def _runconnectedpair_process(results, basedir, c_pre, c_post, fit_params, syn_extra_params, synrec, fastforward,
-                              node_pop, edge_pop, fixhp):
+def _runconnectedpair_process(results, basedir, c_pre, c_post, fit_params, syn_extra_params, pre_gid, post_gid,
+                              syn_rec_lst, fastforward, node_pop, edge_pop, fixhp):
     """..."""
     sim_config = os.path.join(basedir, "simulation_config.json")
     ssim = bluecellulab.SSim(sim_config)
     bluecellulab.neuron.h.cvode.atolscale("v", .1)
     logger.debug("Loaded simulation")
-    ssim.instantiate_gids([(node_pop, post_gid)], add_synapses=True, add_minis=False, add_stimuli=True, add_replay=True,
+    ssim.instantiate_gids([(node_pop, post_gid)], add_synapses=True, add_minis=False,
                           intersect_pre_gids=[(node_pop, pre_gid)])
     cell = ssim.cells[(node_pop, post_gid)]
     if fixhp:  # hyperpolarization workaround
         for sec in cell.somatic + cell.axonal:
             sec.uninsert("SK_E2")
+    pre_spikes = np.unique(np.loadtxt(os.path.join(basedir, "out.dat"), skiprows=1)[:, 0])
     # TODO: add stimuli
     if fit_params is not None:  # setup global parameters
         _set_global_params(fit_params)
-
-    prespikes = np.unique(np.loadtxt(os.path.join(basedir, 'out.dat'), skiprows=1)[:, 0])
-    # Generate supplementary model parameters
-    pgen = ParamsGenerator(circuitpath, extra_recipe)
-    syn_extra_params = {}
-    for pg in pregids:
-        syn_extra_params.update(pgen.generate_params(pg, postgid))
-    # Set fitted model parameters
-    if fit_params != None:
-        _set_global_params(fit_params)
-        # Enable in vivo mode (global)
-        if invivo:
-            bglibpy.neuron.h.cao_CR_GluSynapse = 1.2  # mM
-            # TODO Set global cao
-        if ca2p5:
-            bglibpy.neuron.h.cao_CR_GluSynapse = 2.5  # mM
-            # TODO Set global cao
-        # Store model properties
-        modprop = {key: getattr(bglibpy.neuron.h, '%s_GluSynapse' % key) for key in default_modprop}
-        # Allocate recording vectors
-        actual_synrec = default_synrec if synrec == None else synrec
-        time_series = {key: list() for key in actual_synrec}
-        synprop = {key: list() for key in default_synprop}
-        # Setup synapses
-        for syn_id in cell.synapses.keys():
-            logger.debug('Configuring synapse %d', syn_id)
-            synapse = cell.synapses[syn_id]
-            # Set local parameters
-            _set_local_params(synapse, fit_params,
-                              syn_extra_params[(postgid, syn_id)],
-                              c_pre[postgid, syn_id],
-                              c_post[postgid, syn_id])
-            # Enable in vivo mode (synapse)
-            if invivo:
-                synapse.hsynapse.Use0_TM = 0.15 * synapse.hsynapse.Use0_TM
-                synapse.hsynapse.Use_d_TM = 0.15 * synapse.hsynapse.Use_d_TM
-                synapse.hsynapse.Use_p_TM = 0.15 * synapse.hsynapse.Use_p_TM
-            if ca2p5:
-                synapse.hsynapse.Use0_TM = 1.09 * synapse.hsynapse.Use0_TM if 1.09 * synapse.hsynapse.Use0_TM <= 1 else 1
-                synapse.hsynapse.Use_d_TM = 1.09 * synapse.hsynapse.Use_d_TM if 1.09 * synapse.hsynapse.Use_d_TM <= 1 else 1
-                synapse.hsynapse.Use_p_TM = 1.09 * synapse.hsynapse.Use_p_TM if 1.09 * synapse.hsynapse.Use_p_TM <= 1 else 1
-            # Setting up recordings
-            for key, lst in time_series.items():
-                recorder = bglibpy.neuron.h.Vector()
-                recorder.record(getattr(synapse.hsynapse, '_ref_%s' % key))
+    syn_rec_lst = SYNREC if syn_rec_lst is None else syn_rec_lst
+    syn_rec, syn_idx = {key: [] for key in SYNREC}, []
+    for syn_id, synapse in cell.synapses.items():
+        syn_idx.append(syn_id[1])
+        if len(syn_rec_lst) != 0:
+            for key, lst in syn_rec.items():  # set up recordings
+                recorder = bluecellulab.neuron.h.Vector()
+                recorder.record(getattr(synapse.hsynapse, "_ref_%s" % key))
                 lst.append(recorder)
-            # Store synapse properties
-            for key, lst in synprop.items():
-                if key == 'Cpre':
-                    lst.append(c_pre[postgid, syn_id])
-                elif key == 'Cpost':
-                    lst.append(c_post[postgid, syn_id])
-                elif key == 'loc':
-                    lst.append(syn_extra_params[(postgid, syn_id)]['loc'])
-                else:
-                    lst.append(getattr(synapse.hsynapse, key))
-            # Show all params
-            for attr in dir(synapse.hsynapse):
-                if re.match('__.*', attr) is None:
-                    logger.debug('%s = %s', attr, str(getattr(synapse.hsynapse, attr)))
-        # Run
-        endtime = 30000 if DEBUG else float(ssim.bc.Run.Duration)
-        if fastforward != None:
-            # Run until fastforward point
-            logger.debug('Fastforward enabled, simulating %d seconds...', fastforward / 1000.)
-            ssim.run(fastforward, cvode=True)
-            # Fastforward synapses
-            logger.debug('Updating synapses...')
-            for syn_id in cell.synapses.keys():
-                logger.debug('Configuring synapse %d', syn_id)
-                synapse = cell.synapses[syn_id]
-                if synapse.hsynapse.rho_GB >= 0.5:
-                    synapse.hsynapse.rho_GB = 1.
-                    synapse.hsynapse.Use_TM = synapse.hsynapse.Use_p_TM
-                    synapse.hsynapse.gmax_AMPA = synapse.hsynapse.gmax_p_AMPA
-                else:
-                    synapse.hsynapse.rho_GB = 0.
-                    synapse.hsynapse.Use_TM = synapse.hsynapse.Use_d_TM
-                    synapse.hsynapse.gmax_AMPA = synapse.hsynapse.gmax_d_AMPA
-            # Complete run
-            logger.debug('Simulating remaining %d seconds...', (endtime - fastforward) / 1000.)
-            bglibpy.neuron.h.cvode_active(1)
-            bglibpy.neuron.h.continuerun(endtime)
-        else:
-            logger.debug('Simulating %d seconds...', endtime / 1000.)
-            ssim.run(endtime, cvode=True)
-        logger.debug('Simulation completed')
-        # Collect all properties
-        synprop.update(modprop)
-        # Collect Results
-        results['t'] = np.array(ssim.get_time())
-        results['v'] = np.array(ssim.get_voltage_traces()[postgid])
-        results['prespikes'] = np.array(prespikes)
-        results['synprop'] = synprop
-        for key, lst in time_series.items():
+    df = _map_syn_idx(sim_config, post_gid, syn_idx, edge_pop)
+    syn_props = {key: [] for key in SYNPROPS}
+    for syn_id, synapse in cell.synapses.items():
+        logger.debug("Configuring synapse %d", syn_id[1])
+        if syn_extra_params is not None:  # configure local parameters
+            _set_local_params(synapse, fit_params,
+                              syn_extra_params[df.loc[df["local_syn_idx"] == syn_id[1]].index[0]],
+                              c_pre[post_gid, syn_id], c_post[post_gid, syn_id])
+        for key, lst in syn_props.items():  # store synapse properties
+            if key == "Cpre":
+                lst.append(c_pre[post_gid, syn_id])
+            elif key == "Cpost":
+                lst.append(c_post[post_gid, syn_id])
+            elif key == "loc":
+                lst.append(syn_extra_params[(post_gid, syn_id)]["loc"])  # TODO ...
+            else:
+                lst.append(getattr(synapse.hsynapse, key))
+        for attr in dir(synapse.hsynapse):  # show all params
+            if re.match('__.*', attr) is None:
+                logger.debug("%s = %s", attr, str(getattr(synapse.hsynapse, attr)))
+    # Run
+    t_end = 30000 if DEBUG else float(ssim.bc.Run.Duration)  # TODO...
+    if fastforward is not None:
+        # Run until fastforward point
+        logger.debug("Fastforward enabled, simulating %.1f seconds...", fastforward / 1000.)
+        ssim.run(fastforward, cvode=True)
+        # Fastforward synapses
+        logger.debug("Updating synapses...")
+        for syn_id, synapse in cell.synapses.items():
+            logger.debug("Configuring synapse %d", syn_id[1])
+            if synapse.hsynapse.rho_GB >= 0.5:
+                synapse.hsynapse.rho_GB = 1.
+                synapse.hsynapse.Use_TM = synapse.hsynapse.Use_p_TM
+                synapse.hsynapse.gmax_AMPA = synapse.hsynapse.gmax_p_AMPA
+            else:
+                synapse.hsynapse.rho_GB = 0.
+                synapse.hsynapse.Use_TM = synapse.hsynapse.Use_d_TM
+                synapse.hsynapse.gmax_AMPA = synapse.hsynapse.gmax_d_AMPA
+        # Complete run
+        logger.debug("Simulating remaining %.1f seconds...", (t_end - fastforward) / 1000.)
+        bluecellulab.neuron.h.cvode_active(1)
+        bluecellulab.neuron.h.continuerun(t_end)
+    else:
+        logger.debug("Simulating %.1f seconds...", t_end / 1000.)
+        ssim.run(t_end, cvode=True)
+    logger.debug("Simulation completed")
+    # Collect all properties
+    syn_props.update({key: getattr(bluecellulab.neuron.h, "%s_GluSynapse" % key) for key in MOD_PROPS})
+    # Collect Results
+    t = np.array(ssim.get_time())
+    v = np.array(ssim.get_voltage_trace((node_pop, post_gid)))
+    results["t"] = t
+    results["v"] = v
+    results["prespikes"] = pre_spikes
+    results["postspikes"] = _get_spikes(t, v)
+    results["synprop"] = syn_props
+    if len(syn_rec_lst) != 0:
+        for key, lst in syn_rec.items():
             results[key] = np.transpose([np.array(rec) for rec in lst])
 
 
-def runconnectedpair(basedir, fit_params=None, synrec=None, fastforward=None,
+def runconnectedpair(basedir, fit_params=None, syn_rec_lst=None, fastforward=None,
                      node_pop="S1nonbarrel_neurons", edge_pop="S1nonbarrel_neurons__S1nonbarrel_neurons__chemical",
                      fixhp=True):
     # Get reference thetas
