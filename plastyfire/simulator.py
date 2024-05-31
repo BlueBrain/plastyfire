@@ -10,23 +10,29 @@ import multiprocessing
 import numpy as np
 import pandas as pd
 from functools import lru_cache
+from libsonata import SpikeReader
 from bluepysnap import Simulation
 import bluecellulab
 from conntility.io.synapse_report import get_presyn_mapping
 
+from plastyfire.epg import ParamsGenerator
+
+bluecellulab.set_verbose(2)
+bluecellulab.neuron.h.cvode.atolscale("v", .1)
 SPIKE_THRESHOLD = -30  # mV
+EXTRA_RECIPE_PATH = "/gpfs/bbp.cscs.ch/project/proj96/circuits/plastic_v1/recipe.csv"
 with_cache = lru_cache(128)  # set cache for spiking thresholds
 logger = logging.getLogger(__name__)  # configure logger
 DEBUG = False
+SYNPROPS = ["Cpre", "Cpost", "loc", "Use0_TM", "Dep_TM", "Fac_TM", "Nrrp_TM", "gmax0_AMPA", "gmax_NMDA",
+            "volume_CR", "synapseID", "theta_d_GB", "theta_p_GB"]
+MOD_PROPS = ["gamma_d_GB", "gamma_p_GB"]  # 'tau_exp_GB'
+SYNREC = ["rho_GB", "Use_GB", "gmax_AMPA", "cai_CR", "vsyn", "ica_NMDA", "ica_VDCC", "effcai_GB"]
 # because of the constant ping-pong between GluSynapse.mod, SONATA parameter names
 # and synapse helpers both in `neurodamus` and in bluecellulab.synapses.synapse_types/GluSynapse() mimicking it
 # some variable names have to be patched (to match the current state of GluSynapse.mod)
 PARAM_MAP = {"Use_d_TM": "Use_d", "Use_p_TM": "Use_p", "Use0_TM": "Use",
              "Dep_TM": "Dep", "Fac_TM": "Fac", "Nrrp_TM": "Nrrp"}
-SYNPROPS = ["Cpre", "Cpost", "loc", "Use0_TM", "Dep_TM", "Fac_TM", "Nrrp_TM", "gmax0_AMPA", "gmax_NMDA",
-            "volume_CR", "synapseID", "theta_d_GB", "theta_p_GB"]
-MOD_PROPS = ["gamma_d_GB", "gamma_p_GB"]  # 'tau_exp_GB'
-SYNREC = ["rho_GB", "Use_TM", "gmax_AMPA", "cai_CR", "vsyn", "ica_NMDA", "ica_VDCC", "effcai_GB"]
 
 
 def _get_spikes(t, v, dt_int=0.025):
@@ -39,10 +45,9 @@ def _get_spikes(t, v, dt_int=0.025):
 
 def _runsinglecell_proc(sim_config, post_gid, stimulus, results, node_pop, fixhp):
     """Multiprocessing subprocess for `runsinglecell()`"""
-    ssim = bluecellulab.SSim(sim_config)
-    bluecellulab.neuron.h.cvode.atolscale("v", .1)
-    ssim.instantiate_gids([(node_pop, post_gid)])
-    cell = ssim.cells[(node_pop, post_gid)]
+    sim = bluecellulab.CircuitSimulation(sim_config)
+    sim.instantiate_gids([(node_pop, post_gid)])
+    cell = sim.cells[(node_pop, post_gid)]
     if fixhp:  # hyperpolarization workaround
         for sec in cell.somatic + cell.axonal:
             sec.uninsert("SK_E2")
@@ -51,10 +56,10 @@ def _runsinglecell_proc(sim_config, post_gid, stimulus, results, node_pop, fixhp
     stim_duration = (stimulus["nspikes"] - 1) * 1000. / stimulus["freq"] + stimulus["width"]
     tstim.train(stimulus["offset"], stim_duration, stimulus["amp"], stimulus["freq"], stimulus["width"])
     cell.persistent.append(tstim)
-    ssim.run(stimulus["offset"] + stim_duration + 200., cvode=True)
+    sim.run(stimulus["offset"] + stim_duration + 200., cvode=True)
     # get soma voltage and simulation time vector and extract spike times
-    t = np.array(ssim.get_time())
-    v = np.array(ssim.get_voltage_trace((node_pop, post_gid)))
+    t = np.array(sim.get_time())
+    v = np.array(sim.get_voltage_trace((node_pop, post_gid)))
     spikes = _get_spikes(t, v)
     # store results
     results["t"] = t
@@ -154,8 +159,7 @@ def _map_syn_idx(sim_config, post_gid, syn_idx, edge_pop):
     `bluecellulab` (just as `neurodamus`) re-indexes synapses for each postsynaptic cell starting at 0
     (which ID is used for seeding the synapses). This helper gets the mapping between the two indexing versions
     It's unfortunate that this is here (and gets called so many times)... but I couldn't find a better way"""
-    sim = Simulation(sim_config)
-    return get_presyn_mapping(sim.circuit, edge_pop,
+    return get_presyn_mapping(Simulation(sim_config).circuit, edge_pop,
                               pd.MultiIndex.from_tuples([(post_gid, syn_id) for syn_id in syn_idx]))
 
 
@@ -166,12 +170,11 @@ def _c_pre_finder_process(sim_config, fit_params, syn_extra_params, pre_gid, pos
     Delivers spike from `pre_gid` and measures the Ca++ transient at the synapses on `post_gid`
     """
     logger.debug("c_pre finder process")
-    ssim = bluecellulab.SSim(sim_config)
-    bluecellulab.neuron.h.cvode.atolscale("v", .1)
-    ssim.instantiate_gids([(node_pop, post_gid)], add_synapses=True, add_minis=False,
+    sim = bluecellulab.CircuitSimulation(sim_config)
+    sim.instantiate_gids([(node_pop, post_gid)], add_synapses=True, add_minis=False,
                           pre_spike_trains={(node_pop, pre_gid): [1000.]},
                           intersect_pre_gids=[(node_pop, pre_gid)])
-    cell = ssim.cells[(node_pop, post_gid)]
+    cell = sim.cells[(node_pop, post_gid)]
     if fixhp:  # hyperpolarization workaround
         for sec in cell.somatic + cell.axonal:
             sec.uninsert("SK_E2")
@@ -196,7 +199,7 @@ def _c_pre_finder_process(sim_config, fit_params, syn_extra_params, pre_gid, pos
         synapse.hsynapse.gmax0_AMPA = synapse.hsynapse.gmax_p_AMPA  # override conductance
         synapse.hsynapse.theta_d_GB = -1  # disable LTD
         synapse.hsynapse.theta_p_GB = -1  # disable LTP
-    ssim.run(2500, cvode=True)
+    sim.run(1500, cvode=True)
     logger.debug("Simulation completed")
     # compute c_pre and store results
     c_pre = {df.loc[df["local_syn_idx"] == syn_id].index[0]: recorder[syn_id].max() for syn_id in syn_idx}
@@ -212,7 +215,7 @@ def c_pre_finder(sim_config, fit_params, syn_extra_params, pre_gid, post_gid,
     """Replays spike from `pre_gid` and measures Ca++ transient in synapses on `post_gid`"""
     pool = multiprocessing.Pool(processes=1)
     results = pool.apply(_c_pre_finder_process, [sim_config, fit_params, syn_extra_params, pre_gid, post_gid,
-                                               node_pop, edge_pop, fixhp])
+                                                 node_pop, edge_pop, fixhp])
     pool.terminate()
     logger.debug("C_pre: %s", str(results["c_pre"]))
     return results["c_pre"]
@@ -226,11 +229,10 @@ def _c_post_finder_process(sim_config, fit_params, syn_extra_params, pre_gid, po
     (from the backpropagiting AP) at the synapses made by `pre_gid`
     """
     logger.debug("c_post finder process")
-    ssim = bluecellulab.SSim(sim_config)
-    bluecellulab.neuron.h.cvode.atolscale("v", .1)
-    ssim.instantiate_gids([(node_pop, post_gid)], add_synapses=True, add_minis=False,
+    sim = bluecellulab.CircuitSimulation(sim_config)
+    sim.instantiate_gids([(node_pop, post_gid)], add_synapses=True, add_minis=False,
                           intersect_pre_gids=[(node_pop, pre_gid)])
-    cell = ssim.cells[(node_pop, post_gid)]
+    cell = sim.cells[(node_pop, post_gid)]
     if fixhp:  # hyperpolarization workaround
         for sec in cell.somatic + cell.axonal:
             sec.uninsert("SK_E2")
@@ -256,11 +258,11 @@ def _c_post_finder_process(sim_config, fit_params, syn_extra_params, pre_gid, po
                               syn_extra_params[df.loc[df["local_syn_idx"] == syn_id[1]].index[0]])
         synapse.hsynapse.theta_d_GB = -1  # disable LTD
         synapse.hsynapse.theta_p_GB = -1  # disable LTP
-    ssim.run(1500, cvode=True)
+    sim.run(1500, cvode=True)
     logger.debug("Simulation completed")
     # get soma voltage and simulation time vector and extract spike times
-    t = np.array(ssim.get_time())
-    v = np.array(ssim.get_voltage_trace((node_pop, post_gid)))
+    t = np.array(sim.get_time())
+    v = np.array(sim.get_voltage_trace((node_pop, post_gid)))
     spikes = _get_spikes(t, v)
     # compute c_post and store results
     c_post = {df.loc[df["local_syn_idx"] == syn_id].index[0]: recorder[syn_id].max() for syn_id in syn_idx}
@@ -309,21 +311,28 @@ def c_post_finder(sim_config, fit_params, syn_extra_params, pre_gid, post_gid, s
     return results["c_post"]
 
 
-def _runconnectedpair_process(results, basedir, c_pre, c_post, fit_params, syn_extra_params, pre_gid, post_gid,
+def _runconnectedpair_process(results, workdir, fit_params, syn_extra_params, pre_gid, post_gid, t_end, c_pre, c_post,
                               syn_rec_lst, fastforward, node_pop, edge_pop, fixhp):
-    """..."""
-    sim_config = os.path.join(basedir, "simulation_config.json")
-    ssim = bluecellulab.SSim(sim_config)
-    bluecellulab.neuron.h.cvode.atolscale("v", .1)
+    """
+    Multiprocessing subprocess for `runconnectedpair()`
+    Injects periodic current pulses (read from simulation_config.json) that makes the postsynaptic cell fire APs,
+    while delivering spikes from the (non-simulated) presynaptic cell (read from file
+    written by `plastyfire/simwriter` as well) after setting up all custom synapse parameters
+    """
+    sim_config = os.path.join(workdir, "simulation_config.json")
+    sim = bluecellulab.CircuitSimulation(sim_config)
     logger.debug("Loaded simulation")
-    ssim.instantiate_gids([(node_pop, post_gid)], add_synapses=True, add_minis=False,
-                          intersect_pre_gids=[(node_pop, pre_gid)])
-    cell = ssim.cells[(node_pop, post_gid)]
+    # Get presynaptic spike times from file (heavily relies on naming conventions
+    # and the fact that spikes are delivered from a single presynaptic cell)
+    pre_spikes = SpikeReader(os.path.join(workdir, "prespikes.h5"))[node_pop].get_dict()["timestamps"]
+    # Instantiate gid with stimuli from sim. config and presynaptic spike times read from file
+    sim.instantiate_gids([(node_pop, post_gid)], add_synapses=True, add_minis=False, add_pulse_stimuli=True,
+                         intersect_pre_gids=[(node_pop, pre_gid)],
+                         pre_spike_trains={(node_pop, pre_gid): pre_spikes})
+    cell = sim.cells[(node_pop, post_gid)]
     if fixhp:  # hyperpolarization workaround
         for sec in cell.somatic + cell.axonal:
             sec.uninsert("SK_E2")
-    pre_spikes = np.unique(np.loadtxt(os.path.join(basedir, "out.dat"), skiprows=1)[:, 0])
-    # TODO: add stimuli
     if fit_params is not None:  # setup global parameters
         _set_global_params(fit_params)
     syn_rec_lst = SYNREC if syn_rec_lst is None else syn_rec_lst
@@ -340,27 +349,30 @@ def _runconnectedpair_process(results, basedir, c_pre, c_post, fit_params, syn_e
     for syn_id, synapse in cell.synapses.items():
         logger.debug("Configuring synapse %d", syn_id[1])
         if syn_extra_params is not None:  # configure local parameters
-            _set_local_params(synapse, fit_params,
-                              syn_extra_params[df.loc[df["local_syn_idx"] == syn_id[1]].index[0]],
-                              c_pre[post_gid, syn_id], c_post[post_gid, syn_id])
+            global_syn_id = df.loc[df["local_syn_idx"] == syn_id[1]].index[0]
+            _set_local_params(synapse, fit_params, syn_extra_params[global_syn_id],
+                              c_pre[global_syn_id], c_post[global_syn_id])
         for key, lst in syn_props.items():  # store synapse properties
             if key == "Cpre":
-                lst.append(c_pre[post_gid, syn_id])
+                lst.append(c_pre[global_syn_id])
             elif key == "Cpost":
-                lst.append(c_post[post_gid, syn_id])
+                lst.append(c_post[global_syn_id])
             elif key == "loc":
-                lst.append(syn_extra_params[(post_gid, syn_id)]["loc"])  # TODO ...
+                lst.append(syn_extra_params[global_syn_id]["loc"])
             else:
-                lst.append(getattr(synapse.hsynapse, key))
-        for attr in dir(synapse.hsynapse):  # show all params
-            if re.match('__.*', attr) is None:
-                logger.debug("%s = %s", attr, str(getattr(synapse.hsynapse, attr)))
+                if key in PARAM_MAP:
+                    lst.append(getattr(synapse.hsynapse, PARAM_MAP[key]))
+                else:
+                    lst.append(getattr(synapse.hsynapse, key))
+        # for attr in dir(synapse.hsynapse):  # show all params
+        #     if re.match('__.*', attr) is None:
+        #         logger.debug("%s = %s", attr, str(getattr(synapse.hsynapse, attr)))
     # Run
-    t_end = 30000 if DEBUG else float(ssim.bc.Run.Duration)  # TODO...
+    t_end = 30000 if DEBUG else t_end
     if fastforward is not None:
         # Run until fastforward point
         logger.debug("Fastforward enabled, simulating %.1f seconds...", fastforward / 1000.)
-        ssim.run(fastforward, cvode=True)
+        sim.run(fastforward, cvode=True)
         # Fastforward synapses
         logger.debug("Updating synapses...")
         for syn_id, synapse in cell.synapses.items():
@@ -379,13 +391,13 @@ def _runconnectedpair_process(results, basedir, c_pre, c_post, fit_params, syn_e
         bluecellulab.neuron.h.continuerun(t_end)
     else:
         logger.debug("Simulating %.1f seconds...", t_end / 1000.)
-        ssim.run(t_end, cvode=True)
+        sim.run(t_end, cvode=True)
     logger.debug("Simulation completed")
     # Collect all properties
     syn_props.update({key: getattr(bluecellulab.neuron.h, "%s_GluSynapse" % key) for key in MOD_PROPS})
     # Collect Results
-    t = np.array(ssim.get_time())
-    v = np.array(ssim.get_voltage_trace((node_pop, post_gid)))
+    t = np.array(sim.get_time())
+    v = np.array(sim.get_voltage_trace((node_pop, post_gid)))
     results["t"] = t
     results["v"] = v
     results["prespikes"] = pre_spikes
@@ -396,29 +408,34 @@ def _runconnectedpair_process(results, basedir, c_pre, c_post, fit_params, syn_e
             results[key] = np.transpose([np.array(rec) for rec in lst])
 
 
-def runconnectedpair(basedir, fit_params=None, syn_rec_lst=None, fastforward=None,
+def runconnectedpair(workdir, fit_params=None, syn_rec_lst=None, fastforward=None,
                      node_pop="S1nonbarrel_neurons", edge_pop="S1nonbarrel_neurons__S1nonbarrel_neurons__chemical",
                      fixhp=True):
-    # Get reference thetas
-    sim_config = os.path.join(basedir, "simulation_config.json")
+    """
+    Pairs spikes (at given frequency and dt written in `plastyfire/simwriter`) and triggers EPSP before and after that
+    (to test the effect of the STDP protocol on the EPSP amplitude)
+    """
+    # Read necessary params from the sim. config
+    sim_config = os.path.join(workdir, "simulation_config.json")
+    sim = Simulation(sim_config)
+    pre_gid, post_gid = sim.node_sets.content["precell"]["node_id"][0], sim.node_sets.content["postcell"]["node_id"][0]
+    t_end = sim.config["run"]["tstop"]
+    width, amp = sim.config["inputs"]["pulse0"]["width"], sim.config["inputs"]["pulse0"]["amp_start"]
+    stimulus = {"nspikes": 1, "freq": 0.1, "width": width, "offset": 1000, "amp": amp}
+    # Get reference Cpre and Cpost values (used to derive depression and potentiation thresholds)
+    pgen = ParamsGenerator(sim.circuit, node_pop, edge_pop, EXTRA_RECIPE_PATH)
+    syn_extra_params = pgen.generate_params(pre_gid, post_gid)
     c_pre = c_pre_finder(sim_config, fit_params, syn_extra_params, pre_gid, post_gid,
                          node_pop=node_pop, edge_pop=edge_pop, fixhp=fixhp)
-    nspikes, freq = 1, 0.1
-    for pulse_width in [1.5, 3, 5]:
-        sim_results = spike_threshold_finder(sim_config, post_gid, nspikes, freq, pulse_width, 1000., 0.05, 5., 100,
-                                             node_pop=node_pop, fixhp=fixhp)
-        if sim_results is not None:
-            break
-    stimulus = {"nspikes": nspikes, "freq": freq, "width": sim_results["width"], "offset": sim_results["offset"],
-                "amp": sim_results["amp"]}
     c_post = c_post_finder(sim_config, fit_params, syn_extra_params, pre_gid, post_gid, stimulus,
                            node_pop=node_pop, edge_pop=edge_pop, fixhp=fixhp)
     # Run main simulation
-    logger.info("Simulating %s...", basedir)
+    logger.info("Simulating %s...", workdir)
     manager = multiprocessing.Manager()
     results = manager.dict()
     child_proc = multiprocessing.Process(target=_runconnectedpair_process,
-            args=[results, basedir, c_pre, c_post, fit_params, synrec, fastforward, invivo, ca2p5, fixhp])
+                                         args=[results, workdir, fit_params, syn_extra_params, pre_gid, post_gid, t_end,
+                                               c_pre, c_post, syn_rec_lst, fastforward, node_pop, edge_pop, fixhp])
     child_proc.start()
     child_proc.join()
     return dict(results)
