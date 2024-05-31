@@ -24,13 +24,13 @@ DEBUG = False
 
 def compute_epsp_ratio(args):
     """Runs sim. of connected pairs and gets EPSP ratio"""
-    from glusynapseutils.analysis.ephysutils import Experiment
-    from glusynapseutils.simulation.simulator import runconnectedpair
+    from plastyfire.ephysutils import Experiment
+    from plastyfire.simulator import runconnectedpair
 
     param_dict, sim_dict = args  # Unpack arguments
-    basedir = os.path.dirname(sim_dict["simpath"])
+    workdir = os.path.dirname(sim_dict["simpath"])
     # Simulate experiment and get EPSP ratio
-    raw_results = runconnectedpair(basedir, param_dict, [], sim_dict["fastforward"])
+    raw_results = runconnectedpair(workdir, param_dict, [], sim_dict["fastforward"])
     exp_handler = Experiment(raw_results, c01duration=sim_dict["c01duration"],
                              c02duration=sim_dict["c02duration"], period=sim_dict["period"])
     epsp_ratio = exp_handler.compute_epsp_ratio(sim_dict["nepsp"])
@@ -77,8 +77,8 @@ class Evaluator(bpop.evaluators.Evaluator):
             logger.debug(sim)
         # Graupner-Brunel model parameters and boundaries,
         self.graup_params = [("tau_effca_GB_GluSynapse", 150., 350.),
-                             ("gamma_d_GB_GluSynapse"  , 1., 300.),
-                             ("gamma_p_GB_GluSynapse"  , 1., 300.),
+                             ("gamma_d_GB_GluSynapse", 1., 300.),
+                             ("gamma_p_GB_GluSynapse", 1., 300.),
                              ("a00", 1., 5.),
                              ("a01", 1., 5.),
                              ("a10", 1., 5.),
