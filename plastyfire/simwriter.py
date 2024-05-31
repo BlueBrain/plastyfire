@@ -1,19 +1,77 @@
 """
-Writes sbatch scripts for every gid (given a circuit and a target in the config file)
-last modified: András Ecker 02.2024
+Writes files for model optimization (more involved)
+and simple ones for generalization (AKA finding thresholds based on the optimized parameters)
+last modified: András Ecker 05.2024
 """
 
 import os
+import h5py
+import pickle
 import pathlib
+import shutil
+import warnings
 import json
 from tqdm import tqdm
 import numpy as np
+import pandas as pd
 from bluepysnap import Circuit
+from conntility.connectivity import ConnectivityMatrix
 
 from plastyfire.config import OptConfig, Config
+from plastyfire.simulator import spike_threshold_finder
 
 MIN2MS = 60 * 1000.
 CPU_TIME = 1.5  # heuristics: c_pre and c_post for a single connection takes ca. 1.3 minutes to simulate/calculate
+
+
+def check_geom_constraint(conn_mat, pre_mtype, post_gid, max_dist):
+    """Check if cell has any presynaptic partners within `max_dists`"""
+    nrn = conn_mat.vertices
+    post_mtype = nrn.loc[nrn["node_ids"] == post_gid, "mtype"].to_numpy()[0]
+    coords = nrn.loc[nrn["node_ids"] == post_gid, ["ss_flat_x", "depth", "ss_flat_y"]]
+    dists = (nrn.loc[nrn["mtype"].isin(pre_mtype), ["ss_flat_x", "depth", "ss_flat_y"]] - coords.to_numpy()).abs()
+    if post_mtype in pre_mtype:
+        dists.drop(coords.index, inplace=True)
+    idx = dists.loc[(dists["ss_flat_x"] < max_dist[0]) &
+                    (dists["depth"] < max_dist[1]) &
+                    (dists["ss_flat_y"] < max_dist[2])].index.to_numpy()
+    valid_gids = nrn.loc[idx, "node_ids"].to_numpy()
+    sub_mat = conn_mat.submatrix(valid_gids, sub_gids_post=[post_gid])
+    if sub_mat.size:
+        return valid_gids[sub_mat.tocoo().row]
+    else:
+        return None
+
+
+def check_electrical_constraint(sim_config, gid, stim_config, save_dir):
+    """Check if the cell can fire correctly at every stim. frequency
+    (and save params. of current injection that makes it fire)"""
+    pklf_name = os.path.join(save_dir, "%i.pkl" % gid)
+    if os.path.isfile(pklf_name):  # check if these sims were already run...
+        return True
+    results = {}
+    for freq in stim_config["freq"]:
+        simres = spike_threshold_finder(sim_config, gid, stim_config["nspikes"],
+                                        freq, stim_config["width"], stim_config["offset"], stim_config["amp_min"],
+                                        stim_config["amp_max"], stim_config["amp_lev"], fixhp=True)
+        if simres is None:
+            return False
+        else:
+            results[freq] = simres
+    # Store results for manual validation and simulation setup
+    with open(pklf_name, "wb") as f:
+        pickle.dump(results, f, -1)
+    return True
+
+
+def save_spikes(h5f_name, prefix, spike_times, spiking_gids):
+    """Save spikes to SONATA format"""
+    assert (spiking_gids.shape == spike_times.shape)
+    with h5py.File(h5f_name, "w") as h5f:
+        grp = h5f.require_group("spikes/%s" % prefix)
+        grp.create_dataset("timestamps", data=spike_times)
+        grp["timestamps"].attrs["units"] = "ms"
+        grp.create_dataset("node_ids", data=spiking_gids, dtype=int)
 
 
 def get_cpu_time(n_afferents):
@@ -31,68 +89,130 @@ class OptSimWriter(OptConfig):
     """Class to setup single cell simulations for the optimization of model parameters"""
     def find_pairs(self):
         """..."""
+        save_dir = os.path.join(self.out_dir, "single_cells")
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        # Write simple simulation config (for checking electrical constraints)
+        sim_config = {"run": {"dt": 0.025, "tstop": self.T, "random_seed": self.seed},
+                      "network": self.circuit_config,
+                      "node_sets_file": self.node_set,
+                      "node_set": self.target,
+                      "output": {"output_dir": os.path.join(self.sims_dir, "out")}}
+        sim_config_path = os.path.join(save_dir, "simulation_config.json")
+        with open(sim_config_path, "w", encoding="utf-8") as f:
+            json.dump(sim_config, f, indent=4)
 
         c = Circuit(self.circuit_config)
-        df = c.nodes[self.node_pop].get(self.target, "synapse_class")
-        gids = df.loc[df == "EXC"].index.to_numpy()  # just to make sure
+        # Get connectivity matrix and flatmap locations (used for distance based filtering) with `conntility`
+        load_cfg = {"loading": {"base_target": self.target,
+                                "properties": ["mtype", "x", "y", "z",
+                                               "ss_flat_x", "ss_flat_y", "depth"]},
+                    "filtering": [{"column": "mtype",
+                                   "values": np.unique(self.pre_mtype + self.post_mtype).tolist()}]}
+        conn_mat = ConnectivityMatrix.from_bluepy(c, load_cfg, connectome=self.edge_pop)
+        nrn = conn_mat.vertices
+        post_gids = nrn.loc[nrn["mtype"].isin(self.post_mtype), "node_ids"].to_numpy()
+        np.random.seed(self.seed)
+        np.random.shuffle(post_gids)
+        # Find pairs (TODO: parallelize)
+        pairs = []
+        pbar = tqdm(total=self.npairs, desc="Finding pairs")
+        for i, post_gid in enumerate(post_gids):
+            # Check if post_gid fulfills constraints
+            pre_gids = check_geom_constraint(conn_mat, self.pre_mtype, post_gid, self.max_dist)
+            if pre_gids is not None:
+                if check_electrical_constraint(sim_config_path, post_gid, self.config["stimulus"], save_dir):
+                    np.random.seed(self.seed + i)
+                    pairs.append((np.random.choice(pre_gids, 1)[0], post_gid))  # select a random presynaptic partner
+                    pbar.update(1)
+            if len(pairs) == self.npairs:
+                break
+        pbar.close()
+        if len(pairs) < self.npairs:
+            warnings.warn("Not enough pairs found")
+        return pairs
+        # pair = (205559, 199162)
 
-
-    def write_sim_files(self):
-        """..."""
-        # Derived params
+    def write_sim_files(self, pairs):
+        """Writes pair, frequency, and dt specific `simulation_config.json` used by `bluecellulab`
+        and batch scripts to launch single cell sims"""
+        # Copy config file to sims dir (just to make sure that one can more or less know what was run...)
+        basedir = os.path.split(os.path.split(self.out_dir)[0])[0]
+        if not os.path.exists(basedir):
+            os.makedirs(basedir)
+        shutil.copyfile(self._config_path, os.path.join(basedir, "%s.yaml" % self.label))
+        # Generate presynaptic spike times (for C01 and C02)
         n_spikes_before = int(self.C01_duration * MIN2MS / self.C01_T)
         n_spikes_after = int(self.C02_duration * MIN2MS / self.C02_T)
-        # CPU time heuristics (TODO: find out where 8 comes from)
+        before_pre_spikes = [self.offset + i * self.C01_T for i in range(n_spikes_before)]
+        after_pre_spikes = [self.offset + n_spikes_before * self.C01_T + self.nreps * self.T +
+                            i * self.C02_T for i in range(n_spikes_after)]
         before_duration = n_spikes_before * self.C01_T
         t_stop = before_duration + n_spikes_after * self.C02_T + self.nreps * self.T
+        '''
+        # CPU time heuristics (TODO: find out where 8 comes from)
         h, m = np.divmod(8 * t_stop / 1000., 3600)
         m, s = np.divmod(m, 60)
         cpu_time_str = "%.2i:%.2i:%.2i" % (h, m, s)
-
+        '''
         all_sims = []
         for freq in self.freq:
             for dt in self.dt:
-                sim_name = "%iHz_%ims" % (int(freq), int(dt))
-                # Generate postsynaptic stimulus times (only one period to set periodic stimulus)
-                isi = 1000.0 / freq  # Inter Spike Interval (ms)
-                post_spikes = np.array([self.offset + before_duration + i * isi for i in range(self.nspikes)])
-                # Generate presynaptic spike times (C01 and C02)
-                before_pre_spikes = [self.offset + i * self.C01_T for i in range(n_spikes_before)]
-                after_pre_spikes = [self.offset + n_spikes_before * self.C01_T + self.nreps * self.T + \
-                                    i * self.C02_T for i in range(n_spikes_after)]
-                # Generate sims for all pairs
+                # Generate sim files for all pairs
                 for pre_gid, post_gid in pairs:
-                    try:
-                        post_sim = pickle.load(open(os.path.join("data", "simulations", "%i.pkl" % post_gid), "rb"))
-                        # Get pulse amplitude and compute spike delays at the given frequency
-                        amplitude = post_sim[freq]["amp"]
-                        spike_delay = post_sim[freq]["t_spikes"] - post_sim[freq]["t_stimuli"]
-                    except IOError:  # Fallback to default
+                    workdir = os.path.join(self.out_dir, "%i-%i" % (pre_gid, post_gid),
+                                           "%iHz_%ims" % (int(freq), int(dt)))
+                    if not os.path.exists(workdir):
+                        os.makedirs(workdir)
+                    # Write node set with idx of pre- and postsynaptic neurons
+                    jsonf_name = os.path.join(workdir, "node_sets.json")
+                    node_sets = {"precell": {"node_id": [pre_gid], "population": self.node_pop},
+                                 "postcell": {"node_id": [post_gid], "population": self.node_pop}}
+                    with open(jsonf_name, "w", encoding="utf-8") as f:
+                        json.dump(node_sets, f, indent=4)
+                    try:  # load pulse amplitude and compute spike delays at the given frequency (independent of dt...)
+                        with open(os.path.join(self.out_dir, "single_cells", "%i.pkl" % post_gid), "rb") as f:
+                            simres = pickle.load(f)
+                        amplitude = simres[freq]["amp"]
+                        spike_delay = simres[freq]["t_spikes"] - simres[freq]["t_stimuli"]
+                    except IOError:  # fallback to default current pulse
                         warnings.warn("Cannot read stimulus amplitude from cache, using 1 nA")
                         spike_delay = self.nspikes * [self.width / 2.]
                         amplitude = 1.0  # nA
+                    # Generate postsynaptic stimulus (only one period, as the stimulus will be periodic)
+                    isi = 1000.0 / freq  # Inter Spike Interval (ms)
+                    post_spikes = np.array([self.offset + before_duration + i * isi for i in range(self.nspikes)])
+                    inputs = {"pulse%i" % i: {"input_type": "current_clamp", "module": "pulse",
+                                              "node_set": self.target,  # "postcell" (to be fixed in `bluecellulab`)
+                                              "delay": post_spike, "duration": t_stop, "amp_start": amplitude,
+                                              "width": self.width, "frequency": freq}
+                              for i, post_spike in enumerate(post_spikes)}
+                    # Generate (full) presynaptic spike train used as spike replay stimulus
                     pre_spikes = [self.offset + before_duration + i * isi - dt + spike_delay[i] + j * self.T
                                   for j in range(self.nreps) for i in range(self.nspikes)]
                     pre_spikes = np.array(before_pre_spikes + pre_spikes + after_pre_spikes)
-                    workdir = os.path.abspath(os.path.join(self.sims_dir, self.label,
-                                                           "%i-%i" % (pre_gid, post_gid), sim_name))
-                    pathlib.Path(workdir).mkdir(exist_ok=True)
-
-                # TODO: write sim files
-                sim_config = {"run": {"dt": 0.025, "tstop": t_stop, "random_seed": np.random.randint(1, 999999)},
-                              "network": self.circuit_config,
-                              "node_sets_file": self.node_set,
-                              "node_set": self.target,
-                              "output": {"output_dir": "out"},
-                              "connection_overrides": [
-                                  {"name": "plasticity", "source": self.target, "target": self.target,
-                                   "modoverride": "GluSynapse", "weight": 1.0}]}
-                with open(os.path.join(workdir, "simulation_config.json"), "w", encoding="utf-8") as f:
-                    json.dump(sim_config, f, indent=4)
-
-                all_sims.append((pre_gid, post_gid, freq, dt, os.path.join(workdir, "simulation.batch")))
+                    h5f_name = os.path.join(workdir, "prespikes.h5")
+                    save_spikes(h5f_name, self.node_pop, pre_spikes, pre_gid * np.ones(len(pre_spikes), dtype=int))
+                    # Not adding spike replay to the `inputs` because one has to do it manually in `bluecellulab`
+                    # (could be kept for `neurodamus`, but that breaks the current version of `bluecellulab`)
+                    # inputs["prespikes"] = {"input_type": "spikes", "module": "synapse_replay", "node_set": "postcell",
+                    #                        "delay": 0., "duration": t_stop, "spike_file": h5f_name}
+                    # Write simulation config
+                    sim_config = {"run": {"dt": 0.025, "tstop": t_stop, "random_seed": np.random.randint(1, 999999)},
+                                  "network": self.circuit_config,
+                                  "node_sets_file": jsonf_name,
+                                  "node_set": "postcell",
+                                  "output": {"output_dir": os.path.join(workdir, "out")},
+                                  "inputs": inputs,
+                                  "connection_overrides": [
+                                      {"name": "plasticity", "source": "precell", "target": "postcell",
+                                       "modoverride": "GluSynapse", "weight": 1.0}]}
+                    with open(os.path.join(workdir, "simulation_config.json"), "w", encoding="utf-8") as f:
+                        json.dump(sim_config, f, indent=4)
+                    # TODO: write batch script
+                    all_sims.append((pre_gid, post_gid, freq, dt, os.path.join(workdir, "simulation.batch")))
         sim_idx = pd.DataFrame(all_sims, columns=["pregid", "postgid", "frequency", "dt", "path"])
-        return sim_idx
+        sim_idx.to_csv(os.path.join(basedir, "index_%s.csv" % self.label), index=False)
 
 
 class SimWriter(Config):
@@ -113,8 +233,8 @@ class SimWriter(Config):
                       "node_set": self.target,
                       "output": {"output_dir": "out"},
                       "connection_overrides": [{"name": "plasticity", "source": self.target, "target": self.target,
-                                  "modoverride": "GluSynapse", "weight": 1.0}]}
-        with open(os.path.join(self.sims_dir, "simulation_config.json"), "w", encoding="utf-8") as f:
+                                               "modoverride": "GluSynapse", "weight": 1.0}]}
+        with open(self.sim_config, "w", encoding="utf-8") as f:
             json.dump(sim_config, f, indent=4)
 
         # create folders for batch scripts and output csv files
@@ -188,9 +308,16 @@ class SimWriter(Config):
 
 
 if __name__ == "__main__":
-    config_path = "../configs/Zenodo_O1.yaml"
-    writer = SimWriter(config_path)
+    writer = OptSimWriter("../configs/L5TTPC_L5TTPC.yaml")
+    pairs = writer.find_pairs()
+    writer.write_sim_files(pairs)
+    writer = OptSimWriter("../configs/L23PC_L5TTPC.yaml")
+    pairs = writer.find_pairs()
+    writer.write_sim_files(pairs)
+    '''
+    writer = SimWriter("../configs/Zenodo_O1.yaml")
     writer.write_sim_files()
     # writer.relaunch_failed_jobs("slurmstepd:", True)
     # writer.check_failed_thresholds()
+    '''
 
