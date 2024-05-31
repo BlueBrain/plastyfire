@@ -1,6 +1,6 @@
 label: L23PC_L5TTPC
 reference: Sjostrom and Hausser 2006
-seed: 19092006
+seed: 19091997
 npairs: 100
 circuit:
     config: "/gpfs/bbp.cscs.ch/project/proj96/circuits/O1/circuit_config.json"
@@ -14,6 +14,7 @@ postgid_conf:
     mtype: ["L5_TPC:A", "L5_TPC:B"]
 geom_cons:
     max_dist: [50.0, 700.0, 10.0]  # [x, y, z] um
+sims_dir: "/gpfs/bbp.cscs.ch/project/proj96/scratch/home/ecker/bcl-plastyfire/"
 stimulus:
     freq: [50.]  # Hz
     amp: find  # nA
@@ -21,7 +22,7 @@ stimulus:
     amp_max: 3.0
     amp_lev: 10
     nspikes: 5
-    dt: [10]  # ms
+    dt: [10.]  # ms
     width: 3.0
     T: 10000  # ms
     offset: 1000  # ms

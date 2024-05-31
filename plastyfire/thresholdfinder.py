@@ -1,11 +1,12 @@
 """
 Runscript for single cell simulations that find the depression and potentiation thresholds used in GluSynapse
-The script has 2 modes based on the presence of `extra_recipe_path` in the main YAML config:
-- If a recipe with pathway specific means and stds. is provided, it generates base synaptic parameters with correlations
-  (e.g. between: spine volume, synaptic strength, and release probability - see `plasyfire.epg`) and by passing these
-  to `bluecellulab` it overrides the parameters stored in the SONATA edge file before running the sims,
+The script has 2 modes based on the `use_extra_recipe` flag in the main YAML config:
+- If set to 1, and a recipe with pathway specific means and stds. is provided,
+  it generates base synaptic parameters with correlations (e.g. between: spine volume, synaptic strength,
+  and release probability - see `plasyfire.epg`) and by passing these to `bluecellulab`
+  it overrides the parameters stored in the SONATA edge file before running the sims,
   i.e., this mode is used during model development
-- If a recipe is not provided then it just reads the parameters from SONATA sets up single cell sims. and runs them,
+- If set to 0, then it just reads the parameters from SONATA sets up single cell sims. and runs them,
   i.e., this mode is used for validation (or after modifying `plastyfire.simulator` it could e.g. do extra recording)
 last modified: András Ecker 02.2024
 """
@@ -25,6 +26,7 @@ from plastyfire.config import Config
 
 logging.basicConfig(level=logging.INFO)
 L = logging.getLogger("thresholdfinder")
+EXTRA_RECIPE_PATH = "/gpfs/bbp.cscs.ch/project/proj96/circuits/plastic_v1/recipe.csv"
 # parameters to store (with names corresponding to GluSynapse.mod)
 PARAMS = ["Use0_TM", "Dep_TM", "Fac_TM", "Nrrp_TM", "gmax0_AMPA", "volume_CR",  # base 5 params + volume for GluSynapse
           "rho0_GB", "Use_d_TM", "Use_p_TM", "gmax_d_AMPA", "gmax_p_AMPA",  # generated (see `plastifyre.epg`)
@@ -102,8 +104,8 @@ class ThresholdFinder(Config):
         pre_gids = np.intersect1d(edges.afferent_nodes(post_gid), gids)
         df = init_df(edges, pre_gids, post_gid)
         # init extra parameter generator or if recipe is missing read params from edge file
-        if self.extra_recipe_path is not None:
-            pgen = ParamsGenerator(c, self.node_pop, self.edge_pop, self.extra_recipe_path)
+        if self.use_extra_recipe:
+            pgen = ParamsGenerator(c, self.node_pop, self.edge_pop, EXTRA_RECIPE_PATH)
         else:
             syn_df = read_sonata_params(edges, pre_gids, post_gid)
         # first test if gid can be stimulated to elicit a single spike
@@ -122,7 +124,7 @@ class ThresholdFinder(Config):
                    time.strftime("%M:%S", time.gmtime(time.time() - t1))))
             for i, pre_gid in enumerate(pre_gids):
                 L.info("Finding c_pre and c_post for %i -> %i (%i/%i)" % (pre_gid, post_gid, i+1, len(pre_gids)))
-                if self.extra_recipe_path is not None:
+                if self.use_extra_recipe:
                     conn_params = pgen.generate_params(pre_gid, post_gid)
                 else:
                     # in case these are read from the SONATA file it's not necessary to pass these parameters
@@ -150,7 +152,7 @@ class ThresholdFinder(Config):
                 gc.collect()
         else:  # if not, keep negative threshols as initialized in the DataFrame (no plasticity)
             L.info("Stimulus couldn't be calibrated, skipping simulations, setting negative thresholds.")
-            if self.extra_recipe_path is not None:
+            if self.use_extra_recipe:
                 for pre_gid in pre_gids:
                     conn_params = pgen.generate_params(pre_gid, post_gid)
                     store_params(df, conn_params)

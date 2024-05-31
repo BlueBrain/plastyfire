@@ -50,13 +50,17 @@ class BaseConfig(object):
     def sims_dir(self):
         return self.config["sims_dir"]
 
+
+class Config(BaseConfig):
+    """Class to store config parameters about finding C_pre and C_post for all synapses"""
     @property
     def sim_config(self):
         return os.path.join(self.sims_dir, "simulation_config.json")
 
+    @property
+    def use_extra_recipe(self):
+        return self.config["use_extra_recipe"]
 
-class Config(BaseConfig):
-    """Class to store config parameters about finding C_pre and C_post for all synapses"""
     @property
     def out_dir(self):
         return self.config["out_dir"]
@@ -81,6 +85,11 @@ class OptConfig(BaseConfig):
         return self.config["npairs"]
 
     @property
+    def out_dir(self):
+        return os.path.join(self.sims_dir, "fitting", "n%i" % self.npairs,
+                            "seed%i" % self.seed, self.label, "simulations")
+
+    @property
     def pre_mtype(self):
         return self.config["pregid_conf"]["mtype"]
 
@@ -89,8 +98,8 @@ class OptConfig(BaseConfig):
         return self.config["postgid_conf"]["mtype"]
 
     @property
-    def max_dists(self):
-        return self.config["geom_cons"]["max_dists"]
+    def max_dist(self):
+        return self.config["geom_cons"]["max_dist"]
 
     @property
     def freq(self):
@@ -154,8 +163,8 @@ class OptConfig(BaseConfig):
 
     @property
     def C01_T(self):
-        return self.config["stimulus"]["C01_duration"] if "C01_duration" else self.T
+        return self.config["stimulus"]["C01_T"] if "C01_T" in self.config["stimulus"] else self.T
 
     @property
     def C02_T(self):
-        return self.config["stimulus"]["C02_duration"] if "C02_duration" else self.T
+        return self.config["stimulus"]["C02_T"] if "C02_T" in self.config["stimulus"] else self.T

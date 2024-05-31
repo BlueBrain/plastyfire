@@ -13,8 +13,7 @@ pregid_conf:
 postgid_conf:
     mtype: ["L5_TPC:A", "L5_TPC:B"]
 geom_cons:
-    max_dist: [50.0, 50.0, 10.0]  # [x, y, z] um
-extra_recipe_path: "..."
+    max_dist: [50., 50., 10.]  # [x, y, z] um
 sims_dir: "/gpfs/bbp.cscs.ch/project/proj96/scratch/home/ecker/bcl-plastyfire/"
 stimulus:
     freq: [40., 30., 20., 10., 5., 2.]  # Hz
@@ -23,14 +22,11 @@ stimulus:
     amp_max: 3.0
     amp_lev: 10
     nspikes: 5
-    dt: [5, 10, -10]  # ms
+    dt: [5., 10., -10.]  # ms
     width: 3.0
     T: 4000  # ms
     offset: 1000  # ms
     nreps: 10
     C01_duration: 4  # min
     C02_duration: 4  # min
-simulator:
-    venv: /gpfs/bbp.cscs.ch/project/proj32/glusynapse_20190926_release/loadenv.sh
-    path: runpairsim
 

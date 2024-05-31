@@ -4,6 +4,7 @@ circuit:
     target: "hex_O1Excitatory"
     node_pop: "S1nonbarrel_neurons"
     edge_pop: "S1nonbarrel_neurons__S1nonbarrel_neurons__chemical"
+use_extra_recipe: 1
 sims_dir: "/gpfs/bbp.cscs.ch/project/proj96/scratch/home/ecker/bcl-plastyfire/"
 out_dir: "/gpfs/bbp.cscs.ch/project/proj96/circuits/plastic_v1/"
 fit_params:
