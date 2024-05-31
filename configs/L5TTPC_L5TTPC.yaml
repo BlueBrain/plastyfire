@@ -17,7 +17,7 @@ geom_cons:
 sims_dir: "/gpfs/bbp.cscs.ch/project/proj96/scratch/home/ecker/bcl-plastyfire/"
 stimulus:
     freq: [40., 30., 20., 10., 5., 2.]  # Hz
-    amp: find  # nA
+    amp: "find"  # nA
     amp_min: 0.5
     amp_max: 3.0
     amp_lev: 10
