@@ -10,6 +10,6 @@
 #SBATCH --output=sim_{gid}.log
 {qos}
 
-source /gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/plastyfire/setupenv.sh
+source {env}
 
-python /gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/plastyfire/thresholdfinder.py {config} {gid}
+python {run} {config} {gid}
