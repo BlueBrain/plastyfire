@@ -1,6 +1,6 @@
 """
-Single cell simulations in bluecellulab
-last modified: András Ecker, 02.2024
+Single cell simulations in bluecellulab (based on Giuseppe Chindemi's `BGLibPy` code)
+last modified: András Ecker, 06.2024
 """
 
 import os
