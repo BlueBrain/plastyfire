@@ -1,6 +1,6 @@
 """
 Simple run script for `simulator/runconnectedpair()` that parses command line arguments, runs sim, and saves results
-last modified: András Ecker 06.2024
+authors: Giuseppe Chindemi (12.2020) + minor modifications by András Ecker (06.2024)
 """
 
 import os
@@ -43,7 +43,7 @@ if __name__ == "__main__":
 
     # Run simulation
     start_time = time.time()
-    results = sim.runconnectedpair(workdir, fit_params=fit_params, fastforward=args.fastforward,)
+    results = sim.runconnectedpair(workdir, fit_params=fit_params, fastforward=args.fastforward)
     logger.info("Simulation finished in: %s" % time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
     # Store results
     h5file = h5py.File(os.path.join(workdir, "simulation.h5"), "w")
