@@ -221,7 +221,7 @@ class SimWriter(Config):
         """Writes single cell batch script"""
         with open(f_name, "w+", encoding="latin1") as f:
             f.write(templ.format(name="plast_%i" % gid, cpu_time=cpu_time, qos=qos,
-                                 config=self._config_path, gid=gid))
+                                 config=self._config_path, gid=gid, env=self.env, run=self.run))
 
     def write_sim_files(self):
         """Writes simple `simulation_config.json` used by `bluecellulab` and batch scripts for single cell sims"""

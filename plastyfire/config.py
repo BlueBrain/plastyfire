@@ -40,15 +40,16 @@ class BaseConfig(object):
         return self.config["circuit"]["edge_pop"]
 
     @property
-    def extra_recipe_path(self):
-        if "extra_recipe_path" in self.config:
-            return self.config["extra_recipe_path"]
-        else:
-            return None
-
-    @property
     def sims_dir(self):
         return self.config["sims_dir"]
+
+    @property
+    def env(self):
+        return self.config["simulator"]["env"]
+
+    @property
+    def run(self):
+        return self.config["simulator"]["run"]
 
 
 class Config(BaseConfig):
@@ -168,3 +169,7 @@ class OptConfig(BaseConfig):
     @property
     def C02_T(self):
         return self.config["stimulus"]["C02_T"] if "C02_T" in self.config["stimulus"] else self.T
+
+    @property
+    def fastforward(self):
+        return self.config["simulator"]["fastforward"] if "fastforward" in self.config["simulator"] else None
