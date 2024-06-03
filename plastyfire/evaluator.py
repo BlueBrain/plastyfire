@@ -1,10 +1,9 @@
 """
 Custom BluePyOpt evaluator for the Graupner & Brunel model
-authors: Giuseppe Chindemi (12.2020) + minor modifications by András Ecker (05.2024)
+authors: Giuseppe Chindemi (12.2020) + minor modifications by András Ecker (06.2024)
 """
 
 import os
-import yaml
 import pickle
 import logging
 import hashlib
@@ -15,6 +14,8 @@ import pandas as pd
 import bluepyopt as bpop
 from ipyparallel import Client
 from itertools import product
+
+from plastyfire.config import OptConfig
 from plastifire.pyslurm import submitjob, canceljob
 
 MIN2MS = 60 * 1000.
@@ -39,24 +40,20 @@ def compute_epsp_ratio(args):
 
 class Evaluator(bpop.evaluators.Evaluator):
     """Graupner & Brunel plasticity model evaluator"""
-    def __init__(self, invitrodb, seed, sample_size, ipp_id):
+    def __init__(self, invitro_db, seed, sample_size, ipp_id):
         super(Evaluator, self).__init__()
-        self.invitrodb = invitrodb
+        self.invitro_db = invitro_db
         self.ipp_id = ipp_id
         # Find all simulations
         np.random.seed(seed)
         self.allsims = []
         self.objectives = []
-        for elem in self.invitrodb.itertuples():
-            # Load simulation config
-            simconf = yaml.safe_load(open("%s_%s.yml" % (elem.pre_mtype, elem.post_mtype), "r"))
-            # Extract simulation global parameters
-            c01duration = simconf["stimulus"]["C01_duration"]
-            c02duration = simconf["stimulus"]["C02_duration"]
-            period = simconf["stimulus"]["T"]
-            np.testing.assert_almost_equal(period / 1000., elem.period_sweep)
-            fastforward = c01duration * MIN2MS + simconf["stimulus"]["nreps"] * period
-            nepsp = int(c01duration * MIN2MS / period)
+        for elem in self.invitro_db.itertuples():  # TODO
+            # Load simulation config and extract simulation global parameters
+            config = OptConfig("%s_%s.yaml" % (elem.pre_mtype, elem.post_mtype))
+            np.testing.assert_almost_equal(config.T / 1000., elem.period_sweep)
+            fastforward = config.C01_duration * MIN2MS + config.nreps * config.T  # TODO
+            nepsp = int(config.C01_duration * MIN2MS / config.T)
             # Load simulation index
             sim_idx = pd.read_csv("index_%s_%s.csv" % (elem.pre_mtype, elem.post_mtype))
             sim_idx.set_index(["frequency", "dt"], inplace=True)
@@ -68,15 +65,15 @@ class Evaluator(bpop.evaluators.Evaluator):
             else:
                 paths = paths.sample(sample_size, random_state=np.random.randint(9999999))
             self.allsims.extend([{"protocol_id": elem.protocol_id, "period": elem.period_sweep,
-                                  "c01duration": c01duration, "c02duration": c02duration, "fastforward": fastforward,
-                                  "nepsp": nepsp, "simpath": path} for path in paths])
+                                  "c01duration": config.C01_duration, "c02duration": config.C02_duration,
+                                  "fastforward": fastforward, "nepsp": nepsp, "simpath": path} for path in paths])
             # Add objective
             self.objectives.append(bpop.objectives.Objective(elem.protocol_id))
         logger.debug("Available sims:")
         for sim in self.allsims:
             logger.debug(sim)
         # Graupner-Brunel model parameters and boundaries,
-        self.graup_params = [("tau_effca_GB_GluSynapse", 150., 350.),
+        self.graup_params = [  # ("tau_effca_GB_GluSynapse", 150., 350.),
                              ("gamma_d_GB_GluSynapse", 1., 300.),
                              ("gamma_p_GB_GluSynapse", 1., 300.),
                              ("a00", 1., 5.),
@@ -127,17 +124,18 @@ class Evaluator(bpop.evaluators.Evaluator):
         logger.debug("Aggregating results")
         logger.debug(insilico_db)
         # Compute error, ensuring order
-        mergeddb = pd.merge(self.invitrodb, insilico_db, on="protocol_id", suffixes=("_invitro", "_insilico"))
+        merged_db = pd.merge(self.invitro_db, insilico_db, on="protocol_id", suffixes=("_invitro", "_insilico"))
         logger.debug("Joining in vitro and in silico results")
-        logger.debug(mergeddb)
-        mergeddb["error"] = np.abs((mergeddb.mean_epsp_invitro - mergeddb.mean_epsp_insilico) / mergeddb.sem_epsp_invitro)
-        error = [float(mergeddb[mergeddb.protocol_id==obj.name]["error"]) for obj in self.objectives]
+        logger.debug(merged_db)
+        merged_db["error"] = np.abs((merged_db["mean_epsp_invitro"] - merged_db["mean_epsp_insilico"]) / merged_db["sem_epsp_invitro"])
+        error = [float(merged_db.loc[merged_db["protocol_id"] == obj.name, "error"]) for obj in self.objectives]
         logger.debug("Sorting errors")
         logger.debug(error)
-        outcome = [float(mergeddb[mergeddb.protocol_id==obj.name]["mean_epsp_insilico"]) for obj in self.objectives]
+        outcome = [float(merged_db.loc[merged_db["protocol_id"] == obj.name, "mean_epsp_insilico"])
+                   for obj in self.objectives]
         # Store results in cache and clean up
-        pickle.dump({"error": error, "outcome": outcome, "individual": list(param_values),
-                     "resdb": res_db}, open(os.path.join(".cache", cachekey), "wb"), -1)
+        with open(os.path.join(".cache", cachekey), "wb") as f:
+            pickle.dump({"error": error, "outcome": outcome, "individual": list(param_values), "resdb": res_db}, f, -1)
         logger.debug("Cleaning up")
         rc.close()
         if self.ipp_id is None:
