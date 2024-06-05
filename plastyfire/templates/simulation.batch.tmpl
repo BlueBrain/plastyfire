@@ -7,9 +7,9 @@
 #SBATCH --time={cpu_time}
 #SBATCH --mem=15g
 #SBATCH --no-requeue
-#SBATCH --output=sim_{gid}.log
+#SBATCH --output=sim_{log}.log
 {qos}
 
 source {env}
 
-python {run} {config} {gid}
+python {run} {args}

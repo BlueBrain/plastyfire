@@ -1,7 +1,7 @@
 """
 Writes files for model optimization (more involved)
 and simple ones for generalization (AKA finding thresholds based on the optimized parameters)
-last modified: András Ecker 05.2024
+last modified: András Ecker 06.2024
 """
 
 import os
@@ -88,7 +88,7 @@ def get_cpu_time(n_afferents):
 class OptSimWriter(OptConfig):
     """Class to setup single cell simulations for the optimization of model parameters"""
     def find_pairs(self):
-        """..."""
+        """Finds connected pairs of gids based on constraints specified in the config"""
         save_dir = os.path.join(self.out_dir, "single_cells")
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -131,7 +131,18 @@ class OptSimWriter(OptConfig):
         if len(pairs) < self.npairs:
             warnings.warn("Not enough pairs found")
         return pairs
-        # pair = (205559, 199162)
+
+    def write_batch_sript(self, f_name, templ, cpu_time):
+        """Writes single cell batch script"""
+        workdir = os.path.dirname(f_name)
+        tmp = os.path.split(workdir)
+        name = "%s_%s" % (tmp[1], os.path.split(tmp[0])[1])
+        fastforward = self.fastforward
+        if fastforward is None:
+            fastforward = self.C01_duration * MIN2MS + self.nreps * self.T
+        with open(f_name, "w+", encoding="latin1") as f:
+            f.write(templ.format(name=name, cpu_time=cpu_time, qos="#SBATCH --chdir=%s" % workdir, log=name,
+                                 env=self.env, run=self.run, args="--fastforward=%.1f" % fastforward))
 
     def write_sim_files(self, pairs):
         """Writes pair, frequency, and dt specific `simulation_config.json` used by `bluecellulab`
@@ -149,16 +160,16 @@ class OptSimWriter(OptConfig):
                             i * self.C02_T for i in range(n_spikes_after)]
         before_duration = n_spikes_before * self.C01_T
         t_stop = before_duration + n_spikes_after * self.C02_T + self.nreps * self.T
-        '''
         # CPU time heuristics (TODO: find out where 8 comes from)
         h, m = np.divmod(8 * t_stop / 1000., 3600)
         m, s = np.divmod(m, 60)
-        cpu_time_str = "%.2i:%.2i:%.2i" % (h, m, s)
-        '''
+        cpu_time = "%.2i:%.2i:%.2i" % (h, m, s)
+        with open(os.path.join("templates", "simulation.batch.tmpl"), "r") as f:
+            templ = f.read()
+
         all_sims = []
         for freq in self.freq:
             for dt in self.dt:
-                # Generate sim files for all pairs
                 for pre_gid, post_gid in pairs:
                     workdir = os.path.join(self.out_dir, "%i-%i" % (pre_gid, post_gid),
                                            "%iHz_%ims" % (int(freq), int(dt)))
@@ -209,8 +220,10 @@ class OptSimWriter(OptConfig):
                                        "modoverride": "GluSynapse", "weight": 1.0}]}
                     with open(os.path.join(workdir, "simulation_config.json"), "w", encoding="utf-8") as f:
                         json.dump(sim_config, f, indent=4)
-                    # TODO: write batch script
-                    all_sims.append((pre_gid, post_gid, freq, dt, os.path.join(workdir, "simulation.batch")))
+                    # Write launch script
+                    f_name = os.path.join(workdir, "simulation.batch")
+                    self.write_batch_sript(f_name, templ, cpu_time)
+                    all_sims.append((pre_gid, post_gid, freq, dt, f_name))
         sim_idx = pd.DataFrame(all_sims, columns=["pregid", "postgid", "frequency", "dt", "path"])
         sim_idx.to_csv(os.path.join(basedir, "index_%s.csv" % self.label), index=False)
 
@@ -220,8 +233,8 @@ class SimWriter(Config):
     def write_batch_sript(self, f_name, templ, gid, cpu_time, qos):
         """Writes single cell batch script"""
         with open(f_name, "w+", encoding="latin1") as f:
-            f.write(templ.format(name="plast_%i" % gid, cpu_time=cpu_time, qos=qos,
-                                 config=self._config_path, gid=gid, env=self.env, run=self.run))
+            f.write(templ.format(name="plast_%i" % gid, cpu_time=cpu_time, qos=qos, log=gid,
+                                 env=self.env, run=self.run, args="%s %s" % (self._config_path, gid)))
 
     def write_sim_files(self):
         """Writes simple `simulation_config.json` used by `bluecellulab` and batch scripts for single cell sims"""
