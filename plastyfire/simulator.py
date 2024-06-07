@@ -379,11 +379,11 @@ def _runconnectedpair_process(results, workdir, fit_params, syn_extra_params, pr
             logger.debug("Configuring synapse %d", syn_id[1])
             if synapse.hsynapse.rho_GB >= 0.5:
                 synapse.hsynapse.rho_GB = 1.
-                synapse.hsynapse.Use_TM = synapse.hsynapse.Use_p_TM
+                synapse.hsynapse.Use = synapse.hsynapse.Use_p
                 synapse.hsynapse.gmax_AMPA = synapse.hsynapse.gmax_p_AMPA
             else:
                 synapse.hsynapse.rho_GB = 0.
-                synapse.hsynapse.Use_TM = synapse.hsynapse.Use_d_TM
+                synapse.hsynapse.Use = synapse.hsynapse.Use_d
                 synapse.hsynapse.gmax_AMPA = synapse.hsynapse.gmax_d_AMPA
         # Complete run
         logger.debug("Simulating remaining %.1f seconds...", (t_end - fastforward) / 1000.)
