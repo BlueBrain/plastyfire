@@ -19,6 +19,7 @@ from plastyfire.config import OptConfig
 from plastifire.pyslurm import submitjob, canceljob
 
 MIN2MS = 60 * 1000.
+FITTED_TAU = 278.3177658387  # previously optimized time constant of Ca*
 logger = logging.getLogger(__name__)
 DEBUG = False
 
@@ -30,6 +31,7 @@ def compute_epsp_ratio(args):
 
     param_dict, sim_dict = args  # Unpack arguments
     workdir = os.path.dirname(sim_dict["simpath"])
+    param_dict["tau_effca_GB_GluSynapse"] = FITTED_TAU
     # Simulate experiment and get EPSP ratio
     raw_results = runconnectedpair(workdir, param_dict, [], sim_dict["fastforward"])
     exp_handler = Experiment(raw_results, c01duration=sim_dict["c01duration"],
@@ -52,14 +54,16 @@ class Evaluator(bpop.evaluators.Evaluator):
             # Load simulation config and extract simulation global parameters
             config = OptConfig("%s_%s.yaml" % (elem.pre_mtype, elem.post_mtype))
             np.testing.assert_almost_equal(config.T / 1000., elem.period_sweep)
-            fastforward = config.C01_duration * MIN2MS + config.nreps * config.T  # TODO
+            fastforward = config.fastforward
+            if fastforward is None:
+                fastforward = config.C01_duration * MIN2MS + config.nreps * config.T
             nepsp = int(config.C01_duration * MIN2MS / config.T)
             # Load simulation index
             sim_idx = pd.read_csv("index_%s_%s.csv" % (elem.pre_mtype, elem.post_mtype))
             sim_idx.set_index(["frequency", "dt"], inplace=True)
             sim_idx.sort_index(inplace=True)
             # Add target simulations
-            paths = sim_idx.loc[elem.frequency_train, elem.dt_train]["path"]
+            paths = sim_idx.loc[elem.frequency_train, elem.dt_train]["path"]  # TODO
             if DEBUG:
                 paths = paths.sample(3)
             else:
