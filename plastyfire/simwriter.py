@@ -197,7 +197,7 @@ class OptSimWriter(OptConfig):
                     inputs = {"pulse%i" % i: {"input_type": "current_clamp", "module": "pulse",
                                               "node_set": self.target,  # "postcell" (to be fixed in `bluecellulab`)
                                               "delay": post_spike, "duration": pairing_duration, "amp_start": amplitude,
-                                              "width": self.width, "frequency": freq}
+                                              "width": self.width, "frequency": 1000. / self.T}
                               for i, post_spike in enumerate(post_spikes)}
                     # Generate (full) presynaptic spike train used as spike replay stimulus
                     pre_spikes = [self.offset + before_duration + i * isi - dt + spike_delay[i] + j * self.T
