@@ -159,7 +159,8 @@ class OptSimWriter(OptConfig):
         after_pre_spikes = [self.offset + n_spikes_before * self.C01_T + self.nreps * self.T +
                             i * self.C02_T for i in range(n_spikes_after)]
         before_duration = n_spikes_before * self.C01_T
-        t_stop = before_duration + n_spikes_after * self.C02_T + self.nreps * self.T
+        pairing_duration = self.nreps * self.T
+        t_stop = before_duration + pairing_duration + n_spikes_after * self.C02_T
         # CPU time heuristics (TODO: find out where 8 comes from)
         h, m = np.divmod(8 * t_stop / 1000., 3600)
         m, s = np.divmod(m, 60)
@@ -195,7 +196,7 @@ class OptSimWriter(OptConfig):
                     post_spikes = np.array([self.offset + before_duration + i * isi for i in range(self.nspikes)])
                     inputs = {"pulse%i" % i: {"input_type": "current_clamp", "module": "pulse",
                                               "node_set": self.target,  # "postcell" (to be fixed in `bluecellulab`)
-                                              "delay": post_spike, "duration": t_stop, "amp_start": amplitude,
+                                              "delay": post_spike, "duration": pairing_duration, "amp_start": amplitude,
                                               "width": self.width, "frequency": freq}
                               for i, post_spike in enumerate(post_spikes)}
                     # Generate (full) presynaptic spike train used as spike replay stimulus
