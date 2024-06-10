@@ -20,7 +20,7 @@ from plastyfire.epg import ParamsGenerator
 bluecellulab.set_verbose(2)
 bluecellulab.neuron.h.cvode.atolscale("v", .1)
 SPIKE_THRESHOLD = -30  # mV
-EXTRA_RECIPE_PATH = "/gpfs/bbp.cscs.ch/project/proj96/circuits/plastic_v1/recipe.csv"
+EXTRA_RECIPE_PATH = "/gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/biodata/recipe.csv"
 with_cache = lru_cache(128)  # set cache for spiking thresholds
 logger = logging.getLogger(__name__)  # configure logger
 DEBUG = False

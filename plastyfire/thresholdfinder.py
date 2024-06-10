@@ -26,7 +26,7 @@ from plastyfire.config import Config
 
 logging.basicConfig(level=logging.INFO)
 L = logging.getLogger("thresholdfinder")
-EXTRA_RECIPE_PATH = "/gpfs/bbp.cscs.ch/project/proj96/circuits/plastic_v1/recipe.csv"
+EXTRA_RECIPE_PATH = "/gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/biodata/recipe.csv"
 # parameters to store (with names corresponding to GluSynapse.mod)
 PARAMS = ["Use0_TM", "Dep_TM", "Fac_TM", "Nrrp_TM", "gmax0_AMPA", "volume_CR",  # base 5 params + volume for GluSynapse
           "rho0_GB", "Use_d_TM", "Use_p_TM", "gmax_d_AMPA", "gmax_p_AMPA",  # generated (see `plastifyre.epg`)

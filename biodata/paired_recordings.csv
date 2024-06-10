@@ -1,0 +1,43 @@
+protocol_id,pre_mtype,post_mtype,area,animal,age,frequency_train,dt_train,n_stimuli_train,n_sweep,period_sweep,mean_epsp_ratio,sem_epsp_ratio,sample_size,reference,notes
+mrk97_01,L5TTPC,L5TTPC,SSC,rat,P14 - P16,2,5,5,10,4,0.9886,0.04,2,Markram et al. 1997,Record digitized from paper.
+mrk97_02,L5TTPC,L5TTPC,SSC,rat,P14 - P16,5,5,5,10,4,1.0161,0.0727,5,Markram et al. 1997,Record digitized from paper.
+mrk97_03,L5TTPC,L5TTPC,SSC,rat,P14 - P16,10,5,5,10,4,1.2038,0.0644,9,Markram et al. 1997,Record digitized from paper.
+mrk97_04,L5TTPC,L5TTPC,SSC,rat,P14 - P16,20,5,5,10,4,1.3687,0.0909,11,Markram et al. 1997,Record digitized from paper.
+mrk97_05,L5TTPC,L5TTPC,SSC,rat,P14 - P16,30,5,5,10,4,1.4239,0.0745,3,Markram et al. 1997,Record digitized from paper.
+mrk97_06,L5TTPC,L5TTPC,SSC,rat,P14 - P16,40,5,5,10,4,1.5008,0.12,4,Markram et al. 1997,Record digitized from paper.
+mrk97_07,L5TTPC,L5TTPC,SSC,rat,P14 - P16,10,10,5,10,4,1.2013,0.0626,6,Markram et al. 1997,Record digitized from paper. AP train repeated 10 to 15 times.
+mrk97_08,L5TTPC,L5TTPC,SSC,rat,P14 - P16,10,-10,5,10,4,0.7922,0.0259,6,Markram et al. 1997,Record digitized from paper. AP train repeated 10 to 15 times.
+egg99_01,L23PC,L23PC,SSC (barrel),rat,P12 - P14,20,10,5,10,10,1.299,0.082,12,Egger et al. 1999,Nothing.
+egg99_02,L4SS,L4SS,SSC (barrel),rat,P12 - P14,1,10,5,10,10,0.816,0.060,4,Egger et al. 1999,Nothing.
+egg99_03,L4SS,L4SS,SSC (barrel),rat,P12 - P14,10,10,5,10,10,0.595,0.060,5,Egger et al. 1999,Nothing.
+egg99_04,L4SS,L4SS,SSC (barrel),rat,P12 - P14,20,10,5,10,10,0.672,0.059,21,Egger et al. 1999,Nothing.
+egg99_05,L4SS,L4SS,SSC (barrel),rat,P12 - P14,50,10,5,10,10,0.966,0.066,4,Egger et al. 1999,Nothing.
+sjs01_01,L5TTPC,L5TTPC,VC,rat,P12 - P21,0.1,10,1,50,10,0.9639,0.051,7,Sjostrom et al. 2001,Record digitized from paper. Cao = 2.5 mM.
+sjs01_02,L5TTPC,L5TTPC,VC,rat,P12 - P21,10,10,5,15,10,1.1523,0.1021,6,Sjostrom et al. 2001,Record digitized from paper. Cao = 2.5 mM.
+sjs01_03,L5TTPC,L5TTPC,VC,rat,P12 - P21,20,10,5,15,10,1.3054,0.1391,3,Sjostrom et al. 2001,Record digitized from paper. Cao = 2.5 mM.
+sjs01_04,L5TTPC,L5TTPC,VC,rat,P12 - P21,40,10,5,15,10,1.5395,0.1127,6,Sjostrom et al. 2001,Record digitized from paper. Cao = 2.5 mM.
+sjs01_05,L5TTPC,L5TTPC,VC,rat,P12 - P21,50,10,5,15,10,1.5589,0.2694,6,Sjostrom et al. 2001,Record digitized from paper. Cao = 2.5 mM.
+sjs01_06,L5TTPC,L5TTPC,VC,rat,P12 - P21,0.1,-10,1,50,10,0.68166,0.07714,7,Sjostrom et al. 2001,Record digitized from paper. Cao = 2.5 mM.
+sjs01_07,L5TTPC,L5TTPC,VC,rat,P12 - P21,10,-10,5,15,10,0.56357,0.10781,3,Sjostrom et al. 2001,Record digitized from paper. Cao = 2.5 mM.
+sjs01_08,L5TTPC,L5TTPC,VC,rat,P12 - P21,20,-10,5,15,10,0.63879,0.09016,4,Sjostrom et al. 2001,Record digitized from paper. Cao = 2.5 mM.
+sjs01_09,L5TTPC,L5TTPC,VC,rat,P12 - P21,40,-10,5,15,10,1.50027,0.30483,5,Sjostrom et al. 2001,Record digitized from paper. Cao = 2.5 mM.
+sjs01_10,L5TTPC,L5TTPC,VC,rat,P12 - P21,50,-10,5,15,10,1.69167,0.185887,10,Sjostrom et al. 2001,Record digitized from paper. Cao = 2.5 mM.
+sjs01_11,L5TTPC,L5TTPC,VC,rat,P12 - P21,0.1,0,1,50,10,0.910125,0.139103,5,Sjostrom et al. 2001,Record from main author's website. Cao = 2.5 mM. Sample size beween 3 and 7.
+sjs01_12,L5TTPC,L5TTPC,VC,rat,P12 - P21,20,25,5,15,10,0.6519,0.18373,5,Sjostrom et al. 2001,Record digitized from paper. Cao = 2.5 mM. Sample size beween 3 and 7.
+sjs01_13,L5TTPC,L5TTPC,VC,rat,P12 - P21,20,0,5,15,10,0.760771,0.099366,5,Sjostrom et al. 2001,Record from main author's website. Cao = 2.5 mM. Sample size beween 3 and 7.
+sjs01_14,L5TTPC,L5TTPC,VC,rat,P12 - P21,20,-25,5,15,10,0.70462,0.06994,5,Sjostrom et al. 2001,Record digitized from paper. Cao = 2.5 mM. Sample size beween 3 and 7.
+sjs01_15,L5TTPC,L5TTPC,VC,rat,P12 - P21,40,0,5,15,10,0.928899,0.0384392,5,Sjostrom et al. 2001,Record from main author's website. Cao = 2.5 mM. Sample size beween 3 and 7. Pooled data for 40/50 Hz.
+sjs01_16,L5TTPC,L5TTPC,VC,rat,P12 - P21,50,0,5,15,10,0.92276,0.03549,5,Sjostrom et al. 2001,Record digitized from paper. Cao = 2.5 mM. Sample size beween 3 and 7. Pooled data for 40/50 Hz.
+sjs01_17,L5TTPC,L5TTPC,VC,rat,P12 - P21,100,0,5,15,10,1.24456,0.063635,5,Sjostrom et al. 2001,Record from main author's website. Cao = 2.5 mM. Sample size beween 3 and 7.
+rmp08_01,L4PC,L23PC,SSC (barrel),mouse,P9 - P14,0.2,10,1,100,5,1.54,0.05,5,Rodriguez-Moreno and Paulsen 2008,MK-801 in PRESYNAPTIC pipette to block NMDA receptors. Not clear whether the presynaptic cell was pyramidal or not. Used EPSP slope for EPSP ratio estimation.
+rmp08_02,L4PC,L23PC,SSC (barrel),mouse,P9 - P14,0.2,-15,1,100,5,0.76,0.06,6,Rodriguez-Moreno and Paulsen 2008,Not clear whether the presynaptic cell was pyramidal or not. Used EPSP slope for EPSP ratio estimation.
+rmp08_03,L4PC,L23PC,SSC (barrel),mouse,P9 - P14,0.2,-15,1,100,5,1.04,0.06,6,Rodriguez-Moreno and Paulsen 2008,MK-801 in PRESYNAPTIC pipette to block NMDA receptors. Not clear whether the presynaptic cell was pyramidal or not. Used EPSP slope for EPSP ratio estimation.
+bnr14_01,L23PC,L23PC,SSC (barrel),mouse,P12 - P18,0.2,-15,1,100,5,0.77,0.07,5,Banerjee et al. 2014,Used EPSP slope for EPSP ratio estimation. Delta t from Fig 3C and not explicitly stated in text.
+bnr14_02,L23PC,L23PC,SSC (barrel),mouse,P12 - P18,0.2,-15,1,100,5,0.8,0.06,6,Banerjee et al. 2014,MK-801 in PRESYNAPTIC pipette to block NMDA receptors. Used EPSP slope for EPSP ratio estimation. Delta t from Fig 3C and not explicitly stated in text.
+zlb09_01,L23PC,L23PC,VC,rat,P14 - P21,0.2,10,1,40,5,0.64,0.07,6,Zilberter et al. 2009,During EPSP tests the intersweep interval was increased to 7 s.
+zlb09_02,L23PC,L23PC,VC,rat,P14 - P21,0.2,-10,1,40,5,0.56,0.06,4,Zilberter et al. 2009,During EPSP tests the intersweep interval was increased to 7 s. Data not shown.
+zlb09_03,L23PC,L23PC,VC,rat,P14 - P21,10,10,5,40,5,0.76,0.07,19,Zilberter et al. 2009,During EPSP tests the intersweep interval was increased to 7 s.
+zlb09_04,L23PC,L23PC,VC,rat,P14 - P21,20,10,5,40,5,1.07,0.11,6,Zilberter et al. 2009,During EPSP tests the intersweep interval was increased to 7 s.
+zlb09_05,L23PC,L23PC,VC,rat,P14 - P21,20,-10,5,40,5,0.93,0.07,5,Zilberter et al. 2009,During EPSP tests the intersweep interval was increased to 7 s. Data not shown.
+sjh06_01,L5TTPC,L5TTPC,VC,rat,P14 - P21,50,10,5,15,10,1.4,0.06,34,Sjostrom and Hausser 2006,Nothing.
+sjh06_02,L23PC,L5TTPC,VC,rat,P14 - P21,50,10,5,15,10,1.06,0.09,19,Sjostrom and Hausser 2006,Nothing.
