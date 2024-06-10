@@ -11,15 +11,19 @@ import zmq
 import time
 import numpy as np
 import pandas as pd
-import bluepyopt as bpop
+from bluepyopt.evaluators import Evaluator
+from bluepyopt.ephys.simulators import NrnSimulator
+from bluepyopt.objectives import Objective
+from bluepyopt.parameters import Parameter
 from ipyparallel import Client
 from itertools import product
 
 from plastyfire.config import OptConfig
-from plastifire.pyslurm import submitjob, canceljob
+from plastyfire.pyslurm import submitjob, canceljob
 
 MIN2MS = 60 * 1000.
 FITTED_TAU = 278.3177658387  # previously optimized time constant of Ca*
+CONFIGS_DIR = "/gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/configs"
 logger = logging.getLogger(__name__)
 DEBUG = False
 
@@ -40,57 +44,66 @@ def compute_epsp_ratio(args):
     return sim_dict["protocol_id"], epsp_ratio
 
 
-class Evaluator(bpop.evaluators.Evaluator):
+class Evaluator(Evaluator):
     """Graupner & Brunel plasticity model evaluator"""
     def __init__(self, invitro_db, seed, sample_size, ipp_id):
         super(Evaluator, self).__init__()
         self.invitro_db = invitro_db
+        self.seed = seed
+        self.sample_size = sample_size
         self.ipp_id = ipp_id
+        self.sim = NrnSimulator()
         # Find all simulations
-        np.random.seed(seed)
         self.allsims = []
         self.objectives = []
-        for elem in self.invitro_db.itertuples():  # TODO
+        for elem in self.invitro_db.itertuples():
             # Load simulation config and extract simulation global parameters
-            config = OptConfig("%s_%s.yaml" % (elem.pre_mtype, elem.post_mtype))
+            config = OptConfig(os.path.join(CONFIGS_DIR, "%s_%s.yaml" % (elem.pre_mtype, elem.post_mtype)))
             np.testing.assert_almost_equal(config.T / 1000., elem.period_sweep)
             fastforward = config.fastforward
             if fastforward is None:
                 fastforward = config.C01_duration * MIN2MS + config.nreps * config.T
             nepsp = int(config.C01_duration * MIN2MS / config.T)
-            # Load simulation index
-            sim_idx = pd.read_csv("index_%s_%s.csv" % (elem.pre_mtype, elem.post_mtype))
+            # Load simulation index (witten by `simwriter.py`)
+            sim_idx = pd.read_csv(os.path.join(os.path.split(os.path.split(config.out_dir)[0])[0],
+                                               "index_%s_%s.csv" % (elem.pre_mtype, elem.post_mtype)))
             sim_idx.set_index(["frequency", "dt"], inplace=True)
             sim_idx.sort_index(inplace=True)
             # Add target simulations
-            paths = sim_idx.loc[elem.frequency_train, elem.dt_train]["path"]  # TODO
+            paths = sim_idx.loc[elem.frequency_train, elem.dt_train]["path"]
             if DEBUG:
                 paths = paths.sample(3)
             else:
-                paths = paths.sample(sample_size, random_state=np.random.randint(9999999))
+                np.random.seed(self.seed)
+                paths = paths.sample(self.sample_size, random_state=np.random.randint(9999999))
             self.allsims.extend([{"protocol_id": elem.protocol_id, "period": elem.period_sweep,
                                   "c01duration": config.C01_duration, "c02duration": config.C02_duration,
                                   "fastforward": fastforward, "nepsp": nepsp, "simpath": path} for path in paths])
             # Add objective
-            self.objectives.append(bpop.objectives.Objective(elem.protocol_id))
+            self.objectives.append(Objective(elem.protocol_id))
         logger.debug("Available sims:")
         for sim in self.allsims:
             logger.debug(sim)
         # Graupner-Brunel model parameters and boundaries,
         self.graup_params = [  # ("tau_effca_GB_GluSynapse", 150., 350.),
-                             ("gamma_d_GB_GluSynapse", 1., 300.),
-                             ("gamma_p_GB_GluSynapse", 1., 300.),
+                             ("gamma_d_GB_GluSynapse", 50., 200.),
+                             ("gamma_p_GB_GluSynapse", 150., 300.),
                              ("a00", 1., 5.),
                              ("a01", 1., 5.),
                              ("a10", 1., 5.),
                              ("a11", 1., 5.),
-                             ("a20", 1., 15.),
+                             ("a20", 1., 10.),
                              ("a21", 1., 5.),
-                             ("a30", 1., 15.),
+                             ("a30", 1., 10.),
                              ("a31", 1., 5.)]
-        self.params = [bpop.parameters.Parameter(param_name, bounds=(min_bound, max_bound))
+        self.params = [Parameter(param_name, bounds=(min_bound, max_bound))
                        for param_name, min_bound, max_bound in self.graup_params]
         self.param_names = [param.name for param in self.params]
+
+    def get_param_dict(self, param_values):
+        """Build dictionary of parameters for the Graupner & Brunel model
+        from an ordered list of values (i.e. an individual)"""
+        return dict(zip(self.param_names, param_values))
 
     def evaluate_with_lists(self, param_values):
         """Evaluate individual"""
@@ -98,8 +111,10 @@ class Evaluator(bpop.evaluators.Evaluator):
         # Check cache for a match
         hashsalt = str(param_values).encode()
         cachekey = hashlib.md5(hashsalt).hexdigest()
-        if os.path.isfile(os.path.join(".cache", cachekey)):
-            cache_data = pickle.load(open(os.path.join(".cache", cachekey), "rb"))  # load cached data
+        pklf_name = os.path.join(".cache", cachekey)
+        if os.path.isfile(pklf_name):
+            with open(pklf_name, "rb") as f:
+                cache_data = pickle.load(f)  # load cached data
             np.testing.assert_array_equal(param_values, cache_data["individual"])  # verify no collision (OMG)
             logger.debug("Returning results from cache")
             return cache_data["error"]  # Return cache match
@@ -146,9 +161,12 @@ class Evaluator(bpop.evaluators.Evaluator):
             canceljob(ipp_id)
         return error
 
-    def get_param_dict(self, param_values):
-        """Build dictionary of parameters for the Graupner & Brunel model
-        from an ordered list of values (i.e. an individual)"""
-        gbp = dict(zip(self.param_names, param_values))
-        return gbp
+    def init_simulator_and_evaluate_with_lists(self, param_values):
+        """
+        Set NEURON variables and run evaluation with lists.
+        Setting the NEURON variables is necessary when using `ipyparallel`,
+        since the new subprocesses have pristine NEURON.
+        """
+        self.sim.initialize()
+        return self.evaluate_with_lists(param_values)
 

@@ -10,15 +10,16 @@ import argparse
 import multiprocessing
 import numpy as np
 import pandas as pd
-from functools import partial
 from deap.tools import ParetoFront
-from bluepyopt.deapext.IBEADEAPoptimisations import IBEADEAPOptimisation
+from bluepyopt.deapext.optimisations import IBEADEAPOptimisation
 
 import plastyfire.evaluator as eval
 
 logger = logging.getLogger("modelfitter")
+CSVF_NAME = "/gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/biodata/paired_recordings.csv"
 PROTOCOL_IDX = ["mrk97_01", "mrk97_02", "mrk97_07", "mrk97_08", "sjh06_02"]  # protocols to use for optimization
-WEIGHT_REDUCE = np.array([1 / 8] * 2 + [1 / 4] * 3)  # weights of each protocols (lower for the first two)
+# not supported in the current version of `bluepyopt` but will keep it here for reference
+WEIGHT_REDUCE = np.array([1 / 8] * 2 + [1 / 4] * 3)  # weights of each protocol (lower for the first two)
 
 
 if __name__ == '__main__':
@@ -47,7 +48,7 @@ if __name__ == '__main__':
         os.makedirs(".cache")
 
     # Load in vitro results
-    invitro_db = pd.read_csv("/gpfs/bbp.cscs.ch/project/proj32/glusynapse_20190926_release/invitro/paired_recording.csv")
+    invitro_db = pd.read_csv(CSVF_NAME)
     invitro_db = invitro_db.loc[invitro_db["protocol_id"].isin(PROTOCOL_IDX)]
     # Create `bluepyopt` evaluator
     np.random.seed(args.seed)
@@ -55,11 +56,11 @@ if __name__ == '__main__':
                         sample_size=args.sample_size, ipp_id=args.ipp_id)
     # Set map function
     pool = multiprocessing.Pool(args.pop_size)
-    # Create `bluepyopt` objects
+    # Create `bluepyopt` object
     logger.info("Optimization parameters\nEta = %f Mut = %f Cx = %f" % (args.eta, args.mutpb, args.cxpb))
     opt = IBEADEAPOptimisation(ev, offspring_size=args.pop_size, eta=args.eta, mutpb=args.mutpb, cxpb=args.cxpb,
                                map_function=pool.map, hof=ParetoFront(),
-                               fitness_reduce=partial(np.average, weights=WEIGHT_REDUCE),
+                               # fitness_reduce=partial(np.average, weights=WEIGHT_REDUCE),
                                seed=np.random.randint(9999999))
     # Run optimization
     cpf_name = "checkpoint.pkl"
