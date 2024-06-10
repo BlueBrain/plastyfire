@@ -21,7 +21,8 @@ from plastyfire.config import OptConfig, Config
 from plastyfire.simulator import spike_threshold_finder
 
 MIN2MS = 60 * 1000.
-CPU_TIME = 1.5  # heuristics: c_pre and c_post for a single connection takes ca. 1.3 minutes to simulate/calculate
+OPT_CPU_TIME = 2.  # heuristics: it takes ~twice as much compute time (with CVode) to simulate biological time
+CPU_TIME = 1.  # heuristics: c_pre and c_post for a single connection takes ~1 minute to simulate/calculate
 
 
 def check_geom_constraint(conn_mat, pre_mtype, post_gid, max_dist):
@@ -161,8 +162,8 @@ class OptSimWriter(OptConfig):
         before_duration = n_spikes_before * self.C01_T
         pairing_duration = self.nreps * self.T
         t_stop = before_duration + pairing_duration + n_spikes_after * self.C02_T
-        # CPU time heuristics (TODO: find out where 8 comes from)
-        h, m = np.divmod(8 * t_stop / 1000., 3600)
+        # CPU time heuristics
+        h, m = np.divmod(OPT_CPU_TIME * t_stop / 1000., 3600)
         m, s = np.divmod(m, 60)
         cpu_time = "%.2i:%.2i:%.2i" % (h, m, s)
         with open(os.path.join("templates", "simulation.batch.tmpl"), "r") as f:
@@ -178,8 +179,8 @@ class OptSimWriter(OptConfig):
                         os.makedirs(workdir)
                     # Write node set with idx of pre- and postsynaptic neurons
                     jsonf_name = os.path.join(workdir, "node_sets.json")
-                    node_sets = {"precell": {"node_id": [pre_gid], "population": self.node_pop},
-                                 "postcell": {"node_id": [post_gid], "population": self.node_pop}}
+                    node_sets = {"precell": {"node_id": [int(pre_gid)], "population": self.node_pop},
+                                 "postcell": {"node_id": [int(post_gid)], "population": self.node_pop}}
                     with open(jsonf_name, "w", encoding="utf-8") as f:
                         json.dump(node_sets, f, indent=4)
                     try:  # load pulse amplitude and compute spike delays at the given frequency (independent of dt...)
@@ -221,7 +222,7 @@ class OptSimWriter(OptConfig):
                                        "modoverride": "GluSynapse", "weight": 1.0}]}
                     with open(os.path.join(workdir, "simulation_config.json"), "w", encoding="utf-8") as f:
                         json.dump(sim_config, f, indent=4)
-                    # Write launch script
+                    # Write launch script (to be able to run it separately with `pairrunner.py`)
                     f_name = os.path.join(workdir, "simulation.batch")
                     self.write_batch_sript(f_name, templ, cpu_time)
                     all_sims.append((pre_gid, post_gid, freq, dt, f_name))
