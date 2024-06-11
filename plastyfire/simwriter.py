@@ -21,7 +21,7 @@ from plastyfire.config import OptConfig, Config
 from plastyfire.simulator import spike_threshold_finder
 
 MIN2MS = 60 * 1000.
-OPT_CPU_TIME = 2.  # heuristics: it takes ~twice as much compute time (with CVode) to simulate biological time
+OPT_CPU_TIME = 2.  # heuristics: it takes ~twice as much compute time (with CVode and fastforward) as biological time
 CPU_TIME = 1.  # heuristics: c_pre and c_post for a single connection takes ~1 minute to simulate/calculate
 
 
@@ -218,7 +218,8 @@ class OptSimWriter(OptConfig):
                                   "output": {"output_dir": os.path.join(workdir, "out")},
                                   "inputs": inputs,
                                   "connection_overrides": [
-                                      {"name": "plasticity", "source": "precell", "target": "postcell",
+                                      {"name": "plasticity", "source": self.target, "target": self.target,
+                                       # "source": "precell", "target": "postcell" (to be fixed in `bluecellulab`)
                                        "modoverride": "GluSynapse", "weight": 1.0}]}
                     with open(os.path.join(workdir, "simulation_config.json"), "w", encoding="utf-8") as f:
                         json.dump(sim_config, f, indent=4)
@@ -323,9 +324,9 @@ class SimWriter(Config):
 
 
 if __name__ == "__main__":
-    writer = OptSimWriter("../configs/L5TTPC_L5TTPC.yaml")
-    pairs = writer.find_pairs()
-    writer.write_sim_files(pairs)
+    # writer = OptSimWriter("../configs/L5TTPC_L5TTPC.yaml")
+    # pairs = writer.find_pairs()
+    # writer.write_sim_files(pairs)
     writer = OptSimWriter("../configs/L23PC_L5TTPC.yaml")
     pairs = writer.find_pairs()
     writer.write_sim_files(pairs)
