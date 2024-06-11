@@ -100,8 +100,7 @@ class Evaluator(Evaluator):
         try:
             logger.debug("Evaluating individual: %s", param_values)
             # Check cache for a match
-            hashsalt = str(param_values).encode()
-            cachekey = hashlib.md5(hashsalt).hexdigest()
+            cachekey = hashlib.md5(str(param_values).encode()).hexdigest()
             pklf_name = os.path.join(".cache", cachekey)
             if os.path.isfile(pklf_name):
                 with open(pklf_name, "rb") as f:
@@ -144,7 +143,7 @@ class Evaluator(Evaluator):
             outcome = [float(merged_db.loc[merged_db["protocol_id"] == obj.name, "mean_epsp_insilico"])
                        for obj in self.objectives]
             # Store results in cache and clean up
-            with open(os.path.join(".cache", cachekey), "wb") as f:
+            with open(pklf_name, "wb") as f:
                 pickle.dump({"error": error, "outcome": outcome, "individual": list(param_values), "resdb": res_db},
                             f, -1)
             logger.debug("Cleaning up")
@@ -164,4 +163,3 @@ class Evaluator(Evaluator):
         """
         self.sim.initialize()
         return self.evaluate_with_lists(param_values)
-
