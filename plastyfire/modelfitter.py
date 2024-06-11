@@ -18,8 +18,6 @@ import plastyfire.evaluator as eval
 logger = logging.getLogger("modelfitter")
 CSVF_NAME = "/gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/biodata/paired_recordings.csv"
 PROTOCOL_IDX = ["mrk97_01", "mrk97_02", "mrk97_07", "mrk97_08", "sjh06_02"]  # protocols to use for optimization
-# not supported in the current version of `bluepyopt` but will keep it here for reference
-
 # model parameters to be optimized (and their boundaries)
 FIT_PARAMS = [  # ("tau_effca_GB_GluSynapse", 150., 350.),
               ("gamma_d_GB_GluSynapse", 50., 200.),
