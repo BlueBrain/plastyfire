@@ -19,7 +19,19 @@ logger = logging.getLogger("modelfitter")
 CSVF_NAME = "/gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/biodata/paired_recordings.csv"
 PROTOCOL_IDX = ["mrk97_01", "mrk97_02", "mrk97_07", "mrk97_08", "sjh06_02"]  # protocols to use for optimization
 # not supported in the current version of `bluepyopt` but will keep it here for reference
-WEIGHT_REDUCE = np.array([1 / 8] * 2 + [1 / 4] * 3)  # weights of each protocol (lower for the first two)
+
+# model parameters to be optimized (and their boundaries)
+FIT_PARAMS = [  # ("tau_effca_GB_GluSynapse", 150., 350.),
+              ("gamma_d_GB_GluSynapse", 50., 200.),
+              ("gamma_p_GB_GluSynapse", 150., 300.),
+              ("a00", 1., 5.),
+              ("a01", 1., 5.),
+              ("a10", 1., 5.),
+              ("a11", 1., 5.),
+              ("a20", 1., 10.),
+              ("a21", 1., 5.),
+              ("a30", 1., 10.),
+              ("a31", 1., 5.)]
 
 
 if __name__ == '__main__':
@@ -52,16 +64,14 @@ if __name__ == '__main__':
     invitro_db = invitro_db.loc[invitro_db["protocol_id"].isin(PROTOCOL_IDX)]
     # Create `bluepyopt` evaluator
     np.random.seed(args.seed)
-    ev = eval.Evaluator(invitro_db, seed=np.random.randint(9999999),
-                        sample_size=args.sample_size, ipp_id=args.ipp_id)
+    ev = eval.Evaluator(FIT_PARAMS, invitro_db, np.random.randint(9999999), args.sample_size, args.ipp_id)
     # Set map function
     pool = multiprocessing.Pool(args.pop_size)
-    # Create `bluepyopt` object
+    # Create `bluepyopt` optimization
     logger.info("Optimization parameters\nEta = %f Mut = %f Cx = %f" % (args.eta, args.mutpb, args.cxpb))
+    np.random.seed(args.seed + 1)
     opt = IBEADEAPOptimisation(ev, offspring_size=args.pop_size, eta=args.eta, mutpb=args.mutpb, cxpb=args.cxpb,
-                               map_function=pool.map, hof=ParetoFront(),
-                               # fitness_reduce=partial(np.average, weights=WEIGHT_REDUCE),
-                               seed=np.random.randint(9999999))
+                               map_function=pool.map, hof=ParetoFront(), seed=np.random.randint(9999999))
     # Run optimization
     cpf_name = "checkpoint.pkl"
     continue_cp = os.path.isfile(cpf_name)

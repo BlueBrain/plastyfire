@@ -15,8 +15,8 @@
 # Set environment
 source /gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/setupenv.sh
 krenew -b -K 10
-
-# Set environment
+set -x
+set -e
 echo "TMPDIR:" $TMPDIR
 export IPYTHONDIR="`pwd`/.ipython"
 export IPYTHON_PROFILE=ipyparallel.${SLURM_JOBID}
@@ -30,7 +30,7 @@ srun ipengine --timeout=500 --profile=${IPYTHON_PROFILE} &
 sleep 5m
 
 # Set next job
-sbatch --dependency=afterany:${SLURM_JOBID} modelfitter.sh
+sbatch --dependency=afterany:${SLURM_JOBID} /gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/modelfitter.sh
 
 # Run
 python /gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/plastyfire/modelfitter.py --gen=200 --sample_size=100 --seed=19091997 --ipp_id=${SLURM_JOBID} -v
