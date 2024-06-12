@@ -7,7 +7,6 @@ import os
 import sys
 import pickle
 import logging
-import time
 import traceback
 import hashlib
 import numpy as np
@@ -20,7 +19,6 @@ from ipyparallel import Client
 from itertools import product
 
 from plastyfire.config import OptConfig
-from plastyfire.pyslurm import submitjob, canceljob
 
 MIN2MS = 60 * 1000.
 FITTED_TAU = 278.3177658387  # previously optimized time constant of Ca*
@@ -101,7 +99,7 @@ class Evaluator(Evaluator):
             logger.debug("Evaluating individual: %s", param_values)
             # Check cache for a match
             cachekey = hashlib.md5(str(param_values).encode()).hexdigest()
-            pklf_name = os.path.join(".cache", cachekey)
+            pklf_name = os.path.join(".cache", "%s.pkl" % cachekey)
             if os.path.isfile(pklf_name):
                 with open(pklf_name, "rb") as f:
                     cache_data = pickle.load(f)  # load cached data
@@ -109,15 +107,10 @@ class Evaluator(Evaluator):
                 logger.debug("Returning results from cache")
                 return cache_data["error"]  # Return cache match
             # Set ipyparallel
-            if self.ipp_id is None:
-                ipp_id = submitjob()
-                time.sleep(300)
-            else:
-                ipp_id = self.ipp_id
-            rc = Client(profile_dir=".ipython/profile_ipyparallel.%d" % ipp_id, timeout=100)
+            rc = Client(profile_dir=".ipython/profile_ipyparallel.%d" % self.ipp_id, timeout=100)
             lview = rc.load_balanced_view()
-            param_dict = self.get_param_dict(param_values)  # convert individual to parameter dict
             # Compute EPSP ratio for all connections
+            param_dict = self.get_param_dict(param_values)  # convert individual to parameter dict
             tasks = list(product([param_dict], self.all_sims))
             logger.debug("Tasks:")
             for task in tasks:
@@ -150,8 +143,6 @@ class Evaluator(Evaluator):
                             f, -1)
             logger.debug("Cleaning up")
             rc.close()
-            if self.ipp_id is None:
-                canceljob(ipp_id)
             return error
         except Exception:
             # Make sure exception and backtrace are thrown back to parent process
