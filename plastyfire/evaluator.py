@@ -125,22 +125,24 @@ class Evaluator(Evaluator):
             logger.debug("Running simulations...")
             results = lview.map(compute_epsp_ratio, tasks)
             # Assemble results
-            res_db = pd.DataFrame([r for r in results], columns=["protocol_id", "epsp"])
+            res_db = pd.DataFrame([r for r in results], columns=["protocol_id", "epsp_ratio"])
             logger.debug("Simulations completed, results:")
             logger.debug(res_db)
-            insilico_db = res_db.groupby("protocol_id")["epsp"].agg(["mean", "sem"]).add_suffix("_epsp").reset_index()
+            insilico_db = res_db.groupby("protocol_id")["epsp_ratio"].agg(["mean", "sem"]).add_suffix("_epsp_ratio").reset_index()
             logger.debug("Aggregating results")
             logger.debug(insilico_db)
             # Compute error, ensuring order
             merged_db = pd.merge(self.invitro_db, insilico_db, on="protocol_id", suffixes=("_invitro", "_insilico"))
             logger.debug("Joining in vitro and in silico results")
             logger.debug(merged_db)
-            merged_db["error"] = np.abs((merged_db["mean_epsp_invitro"] - merged_db["mean_epsp_insilico"]) / merged_db["sem_epsp_invitro"])
-            error = [float(merged_db.loc[merged_db["protocol_id"] == obj.name, "error"]) for obj in self.objectives]
+            merged_db["error"] = np.abs((merged_db["mean_epsp_ratio_invitro"] - merged_db["mean_epsp_ratio_insilico"])
+                                        / merged_db["sem_epsp_ratio_invitro"])
+            error = [float(merged_db.loc[merged_db["protocol_id"] == obj.name, "error"].iloc[0])
+                     for obj in self.objectives]
             error = (error * WEIGHT_REDUCE).tolist()  # weight protocols
             logger.debug("Sorting errors")
             logger.debug(error)
-            outcome = [float(merged_db.loc[merged_db["protocol_id"] == obj.name, "mean_epsp_insilico"])
+            outcome = [float(merged_db.loc[merged_db["protocol_id"] == obj.name, "mean_epsp_ratio_insilico"].iloc[0])
                        for obj in self.objectives]
             # Store results in cache and clean up
             with open(pklf_name, "wb") as f:
