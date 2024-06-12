@@ -3,14 +3,14 @@
 #SBATCH --account=proj96
 #SBATCH --partition=prod
 #SBATCH --time=24:00:00
-#SBATCH --nodes=16
+#SBATCH --nodes=535
 #SBATCH --constraint=cpu
 #SBATCH --cpus-per-task=2
 #SBATCH --no-requeue
 #SBATCH --exclusive
 #SBATCH --mem=0
 #SBATCH --chdir=/gpfs/bbp.cscs.ch/project/proj96/scratch/home/ecker/bcl-plastyfire/fitting/n100/seed19091997/
-#SBATCH --output=opt.log
+#SBATCH --output=opt-%j.log
 
 # Set environment
 source /gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/setupenv.sh
@@ -30,8 +30,9 @@ srun ipengine --timeout=500 --profile=${IPYTHON_PROFILE} &
 sleep 5m
 
 # Set next job
-sbatch --dependency=afterany:${SLURM_JOBID} /gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/modelfitter.sh
+cp /gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/modelfitter.sh .
+sbatch --dependency=afterany:${SLURM_JOBID} modelfitter.sh
 
 # Run
-python /gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/plastyfire/modelfitter.py --gen=200 --sample_size=100 --seed=19091997 --ipp_id=${SLURM_JOBID} -v
+python /gpfs/bbp.cscs.ch/project/proj96/home/ecker/plastyfire/plastyfire/modelfitter.py --gen=100 --sample_size=100 --seed=19091997 --ipp_id=${SLURM_JOBID} -v
 
