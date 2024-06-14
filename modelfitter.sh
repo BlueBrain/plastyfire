@@ -26,7 +26,7 @@ ipcontroller --init --ip='*' --sqlitedb --ping=30000 --profile=${IPYTHON_PROFILE
 sleep 1m
 
 echo "Launching engines"
-srun ipengine --timeout=500 --profile=${IPYTHON_PROFILE} &
+srun ipengine --timeout=5000 --profile=${IPYTHON_PROFILE} &
 sleep 5m
 
 # Set next job
