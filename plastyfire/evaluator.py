@@ -107,7 +107,7 @@ class Evaluator(Evaluator):
                 logger.debug("Returning results from cache")
                 return cache_data["error"]  # Return cache match
             # Set ipyparallel
-            rc = Client(profile_dir=".ipython/profile_ipyparallel.%d" % self.ipp_id, timeout=300)
+            rc = Client(profile_dir=".ipython/profile_ipyparallel.%d" % self.ipp_id, timeout=100)
             lview = rc.load_balanced_view()
             # Compute EPSP ratio for all connections
             param_dict = self.get_param_dict(param_values)  # convert individual to parameter dict
