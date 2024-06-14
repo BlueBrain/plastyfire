@@ -3,7 +3,7 @@
 #SBATCH --account=proj96
 #SBATCH --partition=prod
 #SBATCH --time=24:00:00
-#SBATCH --nodes=535
+#SBATCH --nodes=325
 #SBATCH --constraint=cpu
 #SBATCH --cpus-per-task=2
 #SBATCH --no-requeue
@@ -26,7 +26,7 @@ ipcontroller --init --ip='*' --sqlitedb --ping=30000 --profile=${IPYTHON_PROFILE
 sleep 1m
 
 echo "Launching engines"
-srun ipengine --timeout=5000 --profile=${IPYTHON_PROFILE} &
+srun ipengine --timeout=500 --profile=${IPYTHON_PROFILE} &
 sleep 5m
 
 # Set next job
