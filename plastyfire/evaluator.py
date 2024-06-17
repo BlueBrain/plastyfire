@@ -5,6 +5,7 @@ authors: Giuseppe Chindemi (12.2020) + minor modifications by András Ecker (06.
 
 import os
 import sys
+import time
 import pickle
 import logging
 import traceback
@@ -19,6 +20,7 @@ from ipyparallel import Client
 from itertools import product
 
 from plastyfire.config import OptConfig
+from plastyfire.pyslurm import submitjob, canceljob
 
 MIN2MS = 60 * 1000.
 FITTED_TAU = 278.3177658387  # previously optimized time constant of Ca*
@@ -107,7 +109,12 @@ class Evaluator(Evaluator):
                 logger.debug("Returning results from cache")
                 return cache_data["error"]  # Return cache match
             # Set ipyparallel
-            rc = Client(profile_dir=".ipython/profile_ipyparallel.%d" % self.ipp_id, timeout=100)
+            if self.ipp_id is None:
+                ipp_id = submitjob()
+                time.sleep(300)
+            else:
+                ipp_id = self.ipp_id
+            rc = Client(profile_dir=".ipython/profile_ipyparallel.%d" % ipp_id, timeout=100)
             lview = rc.load_balanced_view()
             # Compute EPSP ratio for all connections
             param_dict = self.get_param_dict(param_values)  # convert individual to parameter dict
@@ -143,6 +150,8 @@ class Evaluator(Evaluator):
                             f, -1)
             logger.debug("Cleaning up")
             rc.close()
+            if self.ipp_id is None:
+                canceljob(ipp_id)
             return error
         except Exception:
             # Make sure exception and backtrace are thrown back to parent process
