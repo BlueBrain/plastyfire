@@ -2,8 +2,8 @@
 #SBATCH --job-name=eval_IBEA
 #SBATCH --account=proj96
 #SBATCH --partition=prod
-#SBATCH --time=6:00:00
-#SBATCH --nodes=3
+#SBATCH --time=4:00:00
+#SBATCH --nodes=4
 #SBATCH --constraint=cpu
 #SBATCH --cpus-per-task=2
 #SBATCH --no-requeue
