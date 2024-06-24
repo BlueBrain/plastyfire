@@ -6,11 +6,12 @@ last modified: András Ecker 06.2024
 
 import os
 import h5py
+import json
 import pickle
 import pathlib
 import shutil
+import hashlib
 import warnings
-import json
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
@@ -21,8 +22,9 @@ from plastyfire.config import OptConfig, Config
 from plastyfire.simulator import spike_threshold_finder
 
 MIN2MS = 60 * 1000.
-OPT_CPU_TIME = 2.  # heuristics: it takes ~twice as much compute time (with CVode and fastforward) as biological time
-CPU_TIME = 1.  # heuristics: c_pre and c_post for a single connection takes ~1 minute to simulate/calculate
+OPT_CPU_TIME = 2.  # heuristics: it takes ~2x compute time (w/ CVode w/ reporting w/o fastforward) as biological time
+CPU_TIME = 1.  # heuristics: c_pre and c_post for a single connection takes <1 minute to simulate/calculate
+FIGS_DIR = "/gpfs/bbp.cscs.ch/project/proj96/home/ecker/figures/plastyfire"
 
 
 def check_geom_constraint(conn_mat, pre_mtype, post_gid, max_dist):
@@ -86,6 +88,78 @@ def get_cpu_time(n_afferents):
     return cpu_time_str, qos
 
 
+def plot_evolution(logbook, fig_name):
+    """Saves figure with the evolution of fitting error"""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig = plt.figure(figsize=(10, 6.5))
+    ax = fig.add_subplot(1, 1, 1)
+    gen = np.array([data["gen"] for data in logbook])
+    mean = np.array([data["avg"] for data in logbook])
+    std = np.array([data["std"] for data in logbook])
+    ax.plot(gen, mean, "k-", linewidth=2, label="pop. mean")
+    ax.fill_between(gen, mean - std, mean + std, color="lightgray", label="pop. std")
+    ax.plot(gen, np.array([data["min"] for data in logbook]), "r-", linewidth=2, label="pop. min")
+    ax.legend(frameon=False)
+    ax.set_xlabel("Generation")
+    ax.set_xlim([1, gen[-1]])
+    ax.set_ylabel("Error")
+    fig.savefig(fig_name, dpi=100, bbox_inches="tight")
+    plt.close()
+
+
+def plot_epsp_ratios(res_db, fig_name):
+    """Quick and dirty plot of EPSP ratios"""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig = plt.figure(figsize=(10, 6.5))
+    ax = fig.add_subplot(2, 3, 1)
+    epsp_ratios = res_db.loc[res_db["protocol_id"] == "mrk97_01", "epsp_ratio"].to_numpy()
+    ax.hist(epsp_ratios, bins=10, range=(0, 2.5), color="lightgray")
+    ax.axvline(0.98, color="red", label="in vitro: 0.98")
+    ax.axvline(np.mean(epsp_ratios), color="black", label="in silico: %.2f" % np.mean(epsp_ratios))
+    ax.legend(frameon=False)
+    ax.set_ylabel("Count")
+    ax.set_title("(Mrk97) f: 2Hz, dt: +5ms")
+    ax2 = fig.add_subplot(2, 3, 2)
+    epsp_ratios = res_db.loc[res_db["protocol_id"] == "mrk97_02", "epsp_ratio"].to_numpy()
+    ax2.hist(epsp_ratios, bins=10, range=(0, 2.5), color="lightgray")
+    ax2.axvline(1.01, color="red", label="in vitro: 1.01")
+    ax2.axvline(np.mean(epsp_ratios), color="black", label="in silico: %.2f" % np.mean(epsp_ratios))
+    ax2.legend(frameon=False)
+    ax2.set_title("(Mrk97) f: 5Hz, dt: +5ms")
+    ax3 = fig.add_subplot(2, 3, 3)
+    epsp_ratios = res_db.loc[res_db["protocol_id"] == "sjh06_02", "epsp_ratio"].to_numpy()
+    ax3.hist(epsp_ratios, bins=10, range=(0, 2.5), color="lightgray")
+    ax3.axvline(1.06, color="red", label="in vitro: 1.06")
+    ax3.axvline(np.mean(epsp_ratios), color="black", label="in silico: %.2f" % np.mean(epsp_ratios))
+    ax3.legend(frameon=False)
+    ax3.set_xlabel("EPSP ratio")
+    ax3.set_title("(Sjh06) f: 50Hz, dt: +10ms")
+    ax4 = fig.add_subplot(2, 3, 4)
+    epsp_ratios = res_db.loc[res_db["protocol_id"] == "mrk97_08", "epsp_ratio"].to_numpy()
+    ax4.hist(epsp_ratios, bins=10, range=(0, 2.5), color="lightgray")
+    ax4.axvline(0.79, color="red", label="in vitro: 0.79")
+    ax4.axvline(np.mean(epsp_ratios), color="black", label="in silico: %.2f" % np.mean(epsp_ratios))
+    ax4.legend(frameon=False)
+    ax4.set_xlabel("EPSP ratio")
+    ax4.set_ylabel("Count")
+    ax4.set_title("(Mrk97) f: 10Hz, dt: -10ms")
+    ax5 = fig.add_subplot(2, 3, 5)
+    epsp_ratios = res_db.loc[res_db["protocol_id"] == "mrk97_07", "epsp_ratio"].to_numpy()
+    ax5.hist(epsp_ratios, bins=10, range=(0, 2.5), color="lightgray")
+    ax5.axvline(1.20, color="red", label="in vitro: 1.20")
+    ax5.axvline(np.mean(epsp_ratios), color="black", label="in silico: %.2f" % np.mean(epsp_ratios))
+    ax5.legend(frameon=False)
+    ax5.set_xlabel("EPSP ratio")
+    ax5.set_title("(Mrk97) f: 10Hz, dt: +10ms")
+    fig.tight_layout()
+    fig.savefig(fig_name, dpi=100, bbox_inches="tight")
+    plt.close()
+
+
 class OptSimWriter(OptConfig):
     """Class to setup single cell simulations for the optimization of model parameters"""
     def find_pairs(self):
@@ -138,12 +212,10 @@ class OptSimWriter(OptConfig):
         workdir = os.path.dirname(f_name)
         tmp = os.path.split(workdir)
         name = "%s_%s" % (tmp[1], os.path.split(tmp[0])[1])
-        fastforward = self.fastforward
-        if fastforward is None:
-            fastforward = self.C01_duration * MIN2MS + self.nreps * self.T
+        args = "--fastforward=%.1f" % self.fastforward if self.fastforward is not None else ""
         with open(f_name, "w+", encoding="latin1") as f:
             f.write(templ.format(name=name, cpu_time=cpu_time, qos="#SBATCH --chdir=%s" % workdir, log=name,
-                                 env=self.env, run=self.run, args="--fastforward=%.1f" % fastforward))
+                                 env=self.env, run=self.run, args=args))
 
     def write_sim_files(self, pairs):
         """Writes pair, frequency, and dt specific `simulation_config.json` used by `bluecellulab`
@@ -229,6 +301,22 @@ class OptSimWriter(OptConfig):
                     all_sims.append((pre_gid, post_gid, freq, dt, f_name))
         sim_idx = pd.DataFrame(all_sims, columns=["pregid", "postgid", "frequency", "dt", "path"])
         sim_idx.to_csv(os.path.join(basedir, "index_%s.csv" % self.label), index=False)
+
+    def read_opt_params(self):
+        """Loads latest `bluepyopt` checkpoint file, plots results and return optimal parameter set"""
+        basedir = os.path.split(os.path.split(self.out_dir)[0])[0]
+        with open(os.path.join(basedir, "checkpoint.pkl"), "rb") as f:
+            tmp = pickle.load(f)
+        plot_evolution(tmp["logbook"], os.path.join(FIGS_DIR, "fitting.png"))
+        errors = [np.linalg.norm(np.array(ind.fitness.values)) for ind in tmp["halloffame"]]
+        fit_params = {param_name: param_value for param_name, param_value
+                      in zip(tmp["param_names"], tmp["halloffame"].items[np.argmin(errors)])}
+        cachekey = hashlib.md5(str(list(fit_params.values())).encode()).hexdigest()
+        with open(os.path.join(basedir, ".cache", "%s.pkl" % cachekey), "rb") as f:
+            tmp = pickle.load(f)
+        print("In silico EPSP ratios:", tmp["outcome"])
+        plot_epsp_ratios(tmp["resdb"], os.path.join(FIGS_DIR, "EPSP_ratios.png"))
+        return fit_params
 
 
 class SimWriter(Config):
@@ -327,13 +415,16 @@ if __name__ == "__main__":
     # writer = OptSimWriter("../configs/L5TTPC_L5TTPC.yaml")
     # pairs = writer.find_pairs()
     # writer.write_sim_files(pairs)
-    writer = OptSimWriter("../configs/L23PC_L5TTPC.yaml")
-    pairs = writer.find_pairs()
-    writer.write_sim_files(pairs)
-    '''
-    writer = SimWriter("../configs/Zenodo_O1.yaml")
-    writer.write_sim_files()
+    # writer = OptSimWriter("../configs/L23PC_L5TTPC.yaml")
+    # pairs = writer.find_pairs()
+    # writer.write_sim_files(pairs)
+
+    writer = OptSimWriter("../configs/L5TTPC_L5TTPC.yaml")
+    fit_params = writer.read_opt_params()
+    # TODO: rewrite a couple of files with opt. params and run them with `pairrunner.py`
+
+    # writer = SimWriter("../configs/Zenodo_O1.yaml")
+    # writer.write_sim_files()
     # writer.relaunch_failed_jobs("slurmstepd:", True)
     # writer.check_failed_thresholds()
-    '''
 
