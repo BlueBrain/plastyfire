@@ -307,6 +307,7 @@ class OptSimWriter(OptConfig):
         basedir = os.path.split(os.path.split(self.out_dir)[0])[0]
         with open(os.path.join(basedir, "checkpoint.pkl"), "rb") as f:
             tmp = pickle.load(f)
+        gen = tmp["logbook"][-1]["gen"]
         plot_evolution(tmp["logbook"], os.path.join(FIGS_DIR, "fitting.png"))
         errors = [np.linalg.norm(np.array(ind.fitness.values)) for ind in tmp["halloffame"]]
         fit_params = {param_name: param_value for param_name, param_value
@@ -315,7 +316,7 @@ class OptSimWriter(OptConfig):
         with open(os.path.join(basedir, ".cache", "%s.pkl" % cachekey), "rb") as f:
             tmp = pickle.load(f)
         print("In silico EPSP ratios:", tmp["outcome"])
-        plot_epsp_ratios(tmp["resdb"], os.path.join(FIGS_DIR, "EPSP_ratios.png"))
+        plot_epsp_ratios(tmp["resdb"], os.path.join(FIGS_DIR, "EPSP_ratios_gen%i.png" % gen))
         return fit_params
 
 
