@@ -18,7 +18,7 @@ setup(
     description="plasticity @BBP",
     long_description="plastyfire: generalize plastic synapses @BBP",
     url="http://bluebrain.epfl.ch",
-    license="LGPL-3.0",
+    license="Apache License 2.0",
     install_requires=["cached-property",
                       "tqdm",
                       "h5py>=3.8.0",
